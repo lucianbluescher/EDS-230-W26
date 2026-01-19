@@ -1,0 +1,32 @@
+---
+title: "Crop Yield Anomaly Prediciton Model"
+author: Lucian Scher
+date: "1-19-2026"
+format: html
+---
+# Assignment goal
+The goal of this project is to implement a simple model of almond (any crop) yield anomaly response to climate.
+
+The inputs will be daily times series of minimum, maximum daily temperatures and precipitation.
+
+The outputs will be maximum, minimum and mean yield anomaly for an input time series.
+
+# Background
+
+Lobell et al., 2006 used data to build models of tree crop yield for California that captured how
+climate variation (place and time) might influence yield. This paper will be the source for the transfer function that will be used in the model.
+
+# Model Diagram
+
+# Setup
+
+```{r}
+clim_raw <- read.table("Assignments/Assignment3/data/clim.txt")
+
+colnames(clim_raw) <- as.character(clim_raw[1,])
+clim_raw <- clim_raw[-1,]
+```
+
+
+
+# Running model
