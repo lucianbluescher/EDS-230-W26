@@ -91,7 +91,6 @@ I will tell you that
 #  Notes
 
 
-
 * There are always multiple ways to code something in R;
 
 * Remember that we want to strive for our code being as simple and streamline as possible. 

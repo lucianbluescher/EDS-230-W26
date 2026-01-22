@@ -1,9 +1,16 @@
 ---
 title: "Crop Yield Anomaly Prediciton Model"
-author: Lucian Scher
+subtitle: "EDS 230 Assignment 3 - Almond Yield Model Test"
+author: "Lucian Scher"
 date: "1-19-2026"
-format: html
+format: pdf
 ---
+
+# Background
+
+Lobell et al., 2006 used data to build models of tree crop yield for California that captured how
+climate variation (place and time) might influence yield. This paper will be the source for the transfer function that will be used in the model.
+
 # Assignment goal
 The goal of this project is to implement a simple model of almond (any crop) yield anomaly response to climate.
 
@@ -11,22 +18,77 @@ The inputs will be daily times series of minimum, maximum daily temperatures and
 
 The outputs will be maximum, minimum and mean yield anomaly for an input time series.
 
-# Background
+## Overview 
 
-Lobell et al., 2006 used data to build models of tree crop yield for California that captured how
-climate variation (place and time) might influence yield. This paper will be the source for the transfer function that will be used in the model.
+This document demonstrates how to run the crop yield anomaly model on the test climate data (`clim.txt`). The model predicts yield anomalies for California perennial crops using monthly temperature and precipitation data derived from daily climate observations.
 
 # Model Diagram
+
+![Model Diagram](diagram.png)
 
 # Setup
 
 ```{r}
-clim_raw <- read.table("Assignments/Assignment3/data/clim.txt")
+#| message: false
+# Load libraries and source model
+library(dplyr)
+source(here::here("Assignments", "Assignment3", "yield_model.R"))
 
-colnames(clim_raw) <- as.character(clim_raw[1,])
-clim_raw <- clim_raw[-1,]
+# Load climate data
+clim_data <- read.table(here::here("Assignments", "Assignment3", "data/clim.txt"), header = TRUE)
 ```
 
+## Model Application
 
+```{r}
+#| fig-width: 8
+#| fig-height: 5
 
-# Running model
+# Inspect data structure
+head(clim_data)
+str(clim_data)
+
+# Run model for almonds
+# Almond model uses: mean min temp from February (month 2) and total precipitation from January (month 1)
+almond_results <- CropYieldModel(clim_data, crop_name = "almonds")
+
+# Display results
+cat("Crop:", almond_results$crop, "\n")
+cat("Number of years:", almond_results$n_years, "\n")
+cat("Max yield anomaly:", round(almond_results$max_yield_anomaly, 4), "ton acre^-1\n")
+cat("Min yield anomaly:", round(almond_results$min_yield_anomaly, 4), "ton acre^-1\n")
+cat("Mean yield anomaly:", round(almond_results$mean_yield_anomaly, 4), "ton acre^-1\n")
+```
+
+# Create summary table
+
+```{r}
+results_summary <- data.frame(
+  Statistic = c("Maximum", "Minimum", "Mean"),
+  Yield_Anomaly = c(
+    round(almond_results$max_yield_anomaly, 4),
+    round(almond_results$min_yield_anomaly, 4),
+    round(almond_results$mean_yield_anomaly, 4)
+  ),
+  Units = rep("ton acre^-1", 3)
+)
+
+knitr::kable(results_summary, caption = "Yield Anomaly Statistics for Almonds")
+```
+
+# Time series plot
+
+```{r}
+plot_data <- data.frame(
+  year = almond_results$harvest_years,
+  yield_anomaly = almond_results$yield_anomalies
+)
+
+plot(plot_data$year, plot_data$yield_anomaly,
+     type = "l",
+     xlab = "Harvest Year",
+     ylab = "Yield Anomaly (ton acre^-1)",
+     main = "Almond Yield Anomalies Over Time")
+points(plot_data$year, plot_data$yield_anomaly, pch = 19, cex = 0.6)
+abline(h = 0, lty = 2, col = "gray")
+```
