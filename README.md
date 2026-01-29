@@ -3,3 +3,14 @@ Materials are organized in directories for quarto lectures (lectures_qmd), paper
 data and R (for R functions as part of the course), assignments 
 
 Materials are updated before each lecture
+
+
+Pull Changes with 
+
+```
+git fetch upstream
+git merge upstream
+git add .
+git commit -m "merge upstream"
+git push
+```

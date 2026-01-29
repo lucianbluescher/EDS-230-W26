@@ -125,14 +125,11 @@ I've provided a function to compute atmospheric conductance $C_{at}$ (how easily
 
 ## Atmospheric conductance (simple model) {.scrollable}
 
-So that you know what it does - here's some background on the function 
-$$
+So that you know what it does - here's some background on the function $$
 C_{at} = \frac{v_m}{6.25*{ln(\frac{z_m-z_d}{z_0})}^2}
-$$
-$$
+$$ $$
 z_d = k_d*h
-$$
-$$
+$$ $$
 z_0 = k_0*h
 $$
 
@@ -185,7 +182,6 @@ First we need to generate parameter sets for the Sobol analysis
 
 -   2 sets of samples of all of the parameters, we will make these up by sampling from expected distributions
 -   use *sobolSalt* to generate the parameter sets
-
 
 ```{r sobolpar}
 source(here("R/Catm.R"))
