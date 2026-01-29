@@ -1,0 +1,131 @@
+---
+title: "Scoping"
+author: "Ojas Sarup"
+date: "2025-02-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## More details on scoping
+
+R operates in various **environments** which are basically the memory spaces that contain all your variables, datasets/frames/tables and functions. In computer science, an "environment" is also known as a **namespace** (i.e. memory space for all named things). To quote the wikipedia article on [namespace](https://bookdown.org/yihui/rmarkdown/tufte-quotes.html):
+
+> In computing, a namespace is a set of signs (names) that are used to identify and refer to objects of various kinds. A namespace ensures that all of a given set of objects have unique names so that they can be easily identified.
+
+At the top level, R operates in what is known as the *global namespace* or *global envionrment*. When you try and reference a variable, datset or function, R will search within the **scope** or **context** of this namespace. The global environment, function namespace, and package namespace are three common namespaces that you will encounter. To quote from the same article:
+
+> A namespace name may provide context (scope in computer science) to a name, and the terms are sometimes used interchangeably. However, the context of a name may also be provided by other factors, such as the location where it occurs or the syntax of the name. 
+
+Let's see an example:
+
+```{r cars}
+my_global_var = 10
+my_Global_var = 20
+
+# print it out
+my_global_var
+my_Global_var
+
+# see what variables are in your R environment
+ls()
+```
+You can see this on the right hand side of RStudio under the "Environment" tab. Both `my_global_var` and `my_Global_var` are in your global environment. Names are **always unique within a namespace** and **case sensitive**, and therefore these are treated as two different variables.
+
+
+## A detailed example of how scoping works with functions
+
+Naomi showed this in class, but I thought it might help to look at it with another example. Let's create a simple **inline** function (i.e. it's created within a chunk or script, and not a separate standalone function) and see how variable scoping behaves in the function and global namespaces.
+
+```{r}
+my_func = function(a, b) {
+  c = a+b
+  return(c)
+}
+```
+
+Note that your function has appeared in the global environment on the right hand side pane (or you can use `ls()` in the R console). Let's use the function.
+
+```{r}
+my_func (my_global_var, my_Global_var) #result should be 30 if you haven't changed those variables
+```
+Note that neither a, b or c are in your global environment. You cannot access their values from the console or the rest of the script/rmd/qmd -- they are **local** to the scope of your function's namespace. They don't exist outside of it.
+```{r}
+ls()
+```
+
+But can the function "see" outside? Let's make a "bad" function that tries to use things in the global environment that it can't be sure exist:
+
+```{r}
+my_bad_func = function(a) {
+  c = a + my_Global_var
+  return(c)
+}
+
+#let's try it out -- with an input of 5 I should get 25
+my_bad_func(5)
+
+#if I delete my_Global_var from the global namespace, the function fails
+rm(my_Global_var)
+
+# run again -- comment the below line if you want this to render/knit successfully
+ my_bad_func(5)
+
+# you will get an error
+# Error in my_bad_func(5) : object 'my_Global_var' not found
+```
+This is BAD. Don't do this, it can lead to unexpected behaviour, errors, etc. 
+
+But remember, the names are unique to each namespace and the most local namespace has precedence, so within a function the function's names will have priority. For example:
+
+```{r}
+my_fixed_func = function(a) {
+  my_global_var = 100
+  c = a + my_global_var
+  return(c)
+}
+
+paste0("In the global environment, my_global_var = ", my_global_var)
+
+#let's try it out -- with an input of 35 I should get 135
+my_fixed_func(35)
+```
+In the above case, it uses the internal value of `my_global_var` instead of the global one. So it is "safe" in this way to have a function namespace variable that has the same name as a global namespace variable, although of course it may become confusing for the reader, but that is a separate matter.
+
+## Example of package namespaces
+
+So how do namespaces work with packages? If you type `help("library")`, you can see how this works:
+
+> `library(package)` and `require(package)` both load the namespace of the package with name `package` and attach it on the search list. `require` is designed for use inside other functions; it returns `FALSE` and gives a warning (rather than an error as `library()` does by default) if the package does not exist.
+
+Basically, loading a package adds the package namespace to the list of loaded package namespaces, through which R will search when you try and use (i.e. "call") a function. It doesn't actually load all the functions etc. of a package into your global environment, and as was mentioned in class, functions in your environment have precedence over those in attached package namespaces. (so be careful!)
+
+However, you can still call functions from packages without loading them, if you have them installed and use the scoping operator
+
+Let's use the package `dplyr` as an example to demonstrate this.
+
+```{r}
+#create a data frame
+my_df = data.frame(day = seq(1,30), Tavg = runif(30, 15, 20))
+
+#print the first few lines to check
+head(my_df)
+
+#use dplyr function called mutate without loading the library but referencing the correct namespace
+#the format is package::function or package::data
+my_df = dplyr::mutate(my_df, precip = runif(30, 0, 10))
+
+head(my_df)
+
+#the other way of doing it of course is the usual library() call
+library(dplyr)
+
+my_df = mutate(my_df, wind=runif(30, 0, 50))
+
+#print last few lines for fun
+tail(my_df)
+```
+
+I hope this might have been helpful!

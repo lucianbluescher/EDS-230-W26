@@ -1,0 +1,87 @@
+---
+title: "Discussion3: Building Blocks"
+format: revealjs
+editor: visual
+---
+
+# Almond Yield Assignment
+
+-   Here's an example of Almond Yield function
+
+```{r, almondanswer}
+library(tidyverse)
+library(here)
+source(here("R/compute_almond_yield.R"))
+
+# read in climate data
+clim = read.table(here("Data/clim.txt"), header=T)
+
+# run the model
+result = compute_almond_yield(clim)
+
+# look at results
+result
+
+# what does an anomoly mean
+
+
+```
+
+
+
+
+## Profit Mode {.scrollable}
+
+Any questions from class
+
+## Todays goal
+
+Develop a profit model for your almond yield
+
+Lets brainstorm on what a profit model might look like
+
+Simpliest?
+
+More complex?
+
+## Profit Model Ideas {.scrollable}
+
+-   profit = revenue - costs
+
+-   revenue = price per unit \* yield
+
+-   costs = fixed costs + variable costs
+
+What might be fixed costs?
+
+What might be variable costs?
+
+Do you want price to be constant?
+
+## Build a profit function
+
+-   Almond yield anomaly will be one input
+
+But profit would depend on actual yield right?
+
+Assume a baseline yield for your orchard (another input to your profit model)
+
+-   Profit will be the output
+
+There may be other inputs depending on your profit model
+
+# Construct your profit model
+
+Work with your partner
+
+# Now put them together
+
+-   There are many ways to combine the almond yield and profit functions
+-   You can have the profit function "call"/use the almond yield function; or
+-   Create a wrapper function that calls them in sequence (first the almond yield and then the profit function)
+
+# Now run your combined model and do some informal sensitivity analysis
+
+-   Which parameters might you vary?
+
+-   Graph how profit varies with your parameters

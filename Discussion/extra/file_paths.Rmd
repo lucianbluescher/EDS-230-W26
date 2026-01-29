@@ -1,0 +1,112 @@
+---
+title: "File paths and directory structures"
+author: "Ojas Sarup"
+date: "2025-02-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## What are file paths?
+
+Files are stored on your computer in various ways -- in physical terms, data is written to some sort of storage medium (hard disk drive, solid state drive, memory card, USB drive, etc.). This is usually done by manipulating magnetic structures (bits) or moving electrons in and out of transistors. The storage mediums/drives handle the translation from raw hardware to software, and the computer's operating system (OS) then interfaces with the storage drives. 
+
+The OS needs a way to track and organize these files and needs to be able to present it to humans in a form that is comprehensible. This is the role of the "file system", and "file paths" are one of the ways in which this organization and presentation is done.
+
+Files are usually organized in a hierarchical or tree structure, and the highest level is called the "root" of the drive (imagine the files being the leaves of the tree). This hierarchy includes folders (aka **directories**), which contain files. When this structure of folders is mapped out in words, it's called the **path** of the file. For example, a file on your Windows Desktop called `example.txt` would have a path `C:\Users\UserName\Desktop\example.txt`. Think of it like an address. Here the root is `C:\`, but you'll often see it used in other similar contexts, like "root of project directory". This just means the starting point of your project folder.
+
+When you open a terminal or command line interface, it usually initializes at a certain point. On Mac OS and Linux, this is often the user's Home directory -- note that this is not the root of the whole drive. On Windows, the start point can vary, it could be the user directory or some windows OS directory. If you open a project in RStudio, the R console will initialize in project's root directory. RStudio also presents a system Terminal which also initializes here. It will look something like this:
+`~/RStudio/ESM_262_Programming/`
+
+The `~` character is a shortcut to whatever RStudio considers your home directory. On Mac/Linux, this is usually the user's Home directory. On Mac, this looks like: `/Users/YourUserName` but you probably won't encounter this unless you go looking. On linux, this looks like `/home/YourUserName`. For Windows, this is usually `C:\Users\YourUserName\Documents` by default.
+
+From there, it moves relatively. You might have a folder called `RStudio` where you've kept all your projects, and then each project gets its own folder -- in this case, it's called `ESM_262_Programming`. These folders must exist in this hierarchy or the path will be invalid. Similarly, files referenced in the path should actually exist.
+
+Finally, note that paths in code are always written as **strings**, i.e. characters. This is specified by using double quotation marks: `"folder1/folder2/file.ex"`.
+
+
+## Fascinating! But why should you care?
+
+Often while programming you need to do some sort of file operation. Maybe you want to read in data or write some output to a file. Data science and in fact computer science more broadly is full of moments when you need to interact with the files on your computer.
+
+Like I mentioned above, when you open a project, the R console initializes in the project root folder. This is called the *working directory*. Any file operations you do will be relative to this working directory. You can see this by typing the following in the R console, or in any script or markdown file. I typed the following in the R console:
+```
+> getwd()
+[1] "D:/Users/Ojas/Documents/RStudio/ESM_262_Programming"
+```
+
+Notice how it returns the full path of the current working directory, and not just relative to the project root. This notation is called an **absolute path**. Also notice the quotation marks.
+
+And now i'll try doing this in the chunk of this markdown document
+```{r cars}
+getwd()
+```
+What happened there? The RMD file has a different working directory. Files usually consider the folder that they're in as their working directory, unless you change it. This markdown file is in a sub-folder called `ta_contributions`.
+
+```{r}
+setwd("../R")
+getwd()
+```
+If you actually run the chunk in the rmd file, you will see a warning. Ignore that for now.
+
+Let's talk about the path I used: `"../R"`. This is what's known as a **relative** path, i.e. relative to the current working directory (recall that this was the `ta_contributions` folder). The double period `..` tells R to look in the folder that's one level above, which in this case was the project root directory `ESM_262_Programming`. Then I ask it to look for a folder called `R`, which exists and thus the working directory is changed successfully.
+
+Then we come to the warning. 
+```
+Warning: The working directory was changed to D:/Users/Ojas/Documents/RStudio/ESM_262_Programming/R inside a notebook chunk. The working directory will be reset when the chunk is finished running. Use the knitr root.dir option in the setup chunk to change the working directory for notebook chunks.
+```
+The change in working directory (via the `setwd()` function) is limited in context to the current chunk being run, after which it is reset. Note that R scripts (`.R` files) keep the same context so the change there is permanent unless you change it again.
+
+## Relevance to sourcing and reading data
+
+In class we have read some data and we have seen how we can source functions. I'm going to provide some ways of doing this, and also some handy file operations. This will be mostly code and less exposition, but still please do read the comments below!
+
+```{r}
+# using the here() function
+# here() always returns the absolute path to the project root directory, so you don't need  to care about the working directory
+# thus, you can use here() to navigate relatively with respect to the project root
+# i don't have the 'here' package loaded so i'm just going to refer to the correct namespace...
+here::here()
+
+# let's load the package to make things easier
+library(here)
+
+# i can use this to check if files or folders exist
+# Always include the file extension (the part after the period character)
+# note that i only tell it the names of files and folders -- it builds the path by itself
+dir.exists(here("R")) # dir means directory, i.e. folder
+file.exists(here("R", "autopower.R"))
+
+# another way
+root = here()
+path = file.path(root, "R", "autopower.R")
+path
+file.exists(path)
+
+# yet another way, using relative paths
+# i like this less because file paths may use / or \ in different OSes, and file.path() and here() take care of that for you
+# but on your own system it's fine
+file.exists("../R/autopower.R")
+
+# same but using file.path
+file.exists(file.path("..", "R", "autopower.R"))
+
+# why did that work?
+# file.path simply joins the strings using the correct / or \, called a separator
+file.path("..", "R", "autopower.R")
+
+# You can use this to source files in similar ways
+# we already had a path variable
+path
+source(path)
+autopower(V=30, m=100, A=15)
+
+# read data
+# SURPRISE! you can also use a pair single quotes ('') to denote strings
+my_df = read.csv(here('data', 'p301.csv'))
+head(my_df)
+```
+
+That's all folks!
