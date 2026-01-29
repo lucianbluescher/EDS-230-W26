@@ -2,7 +2,7 @@
 # This script contains a function to calculate profit from crop yield anomalies for any supported crop.
 
 # Requires sourcing yield profit model
-source("yield_model.R")
+#source(here::here("Assignments", "Assignment3&4_almonds", "yield_model.R"))
 
 
 # Input:

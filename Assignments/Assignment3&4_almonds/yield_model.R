@@ -219,3 +219,7 @@ CropYieldModel <- function(clim, crop_name = "almonds") {
     n_years = sum(valid_years)
   ))
 }
+
+
+
+

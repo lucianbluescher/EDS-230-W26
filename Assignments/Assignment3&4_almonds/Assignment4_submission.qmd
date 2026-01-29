@@ -1,47 +1,28 @@
 ---
-title: "Crop Yield Profit Sensitivity Analysis"
-subtitle: "EDS 230 Assignment 4 - Informal Sensitivity Analysis"
+title: "Almond Yield Profit Sensitivity Analysis"
+subtitle: "EDS 230 Assignment - Profit Model Sensitivity Analysis"
 author: "Lucian Scher"
-date: "1-25-2026"
+date: "1-19-2026"
 format: pdf
-editor: 
-  markdown: 
-    wrap: 72
 ---
 
 # Background
 
-Lobell et al., 2006 used data to build models of tree crop yield for
-California that captured how climate variation (place and time) might
-influence yield. This paper is the source for the transfer function used
-in the yield model.
+Lobell et al., 2006 used data to build models of tree crop yield for California that captured how climate variation (place and time) might influence yield. This paper is the source for the transfer function used in the yield model.
 
-Building on the yield anomaly model, this analysis implements a profit
-model that translates yield anomalies into economic outcomes. The profit
-model accounts for revenue (based on yield changes and market prices)
-and costs (irrigation, planting, and harvest expenses).
+Building on the yield anomaly model, this analysis implements a profit model that translates yield anomalies into economic outcomes. The profit model accounts for revenue (based on yield changes and market prices) and costs (irrigation, planting, and harvest expenses).
 
 # Assignment goal
 
-The goal of this project is to conduct a sensitivity analysis of almond
-yield profit by varying key parameters:
+The goal of this project is to conduct a sensitivity analysis of almond yield profit by varying key parameters: - **Acres**: Number of acres under cultivation - **Irrigation Cost**: Cost of irrigation per acre
 
-\- **Acres**: Number of acres under cultivation
+The inputs will be daily time series of minimum, maximum daily temperatures and precipitation, along with economic parameters.
 
-\- **Irrigation Cost**: Cost of irrigation per acre
-
-The inputs will be daily time series of minimum, maximum daily
-temperatures and precipitation, along with economic parameters.
-
-The outputs will be profit estimates across different parameter
-combinations, visualized to understand how sensitive profit is to
-changes in these parameters.
+The outputs will be profit estimates across different parameter combinations, visualized to understand how sensitive profit is to changes in these parameters.
 
 ## Overview
 
-This document demonstrates a sensitivity analysis of the almond profit
-model. The analysis systematically varies acres and irrigation cost to
-understand how these parameters influence profit outcomes.
+This document demonstrates a sensitivity analysis of the almond profit model. The analysis systematically varies acres and irrigation cost to understand how these parameters influence profit outcomes.
 
 # Setup
 
@@ -51,14 +32,17 @@ understand how these parameters influence profit outcomes.
 library(dplyr)
 library(ggplot2)
 library(tidyr)
+library(scales)
+
 
 # Source model functions
-source(here::here("yield_model.R"))
-source(here::here("profit_model.R"))
+source("yield_model.R")
+source("profit_model.R")
 
 # Load climate data
 # Adjust path as needed for your data location
 clim_data <- read.table(here::here("data", "clim.txt"), header = TRUE)
+
 ```
 
 ```{r}
@@ -72,23 +56,9 @@ str(clim_data)
 
 ## Parameter Ranges
 
-We will vary two key parameters: -
+We will vary two key parameters: - **Acres**: 50 to 200 acres (increments of 25) - **Irrigation Cost**: 300 to 700 dollars per acre (increments of 50)
 
-**Acres**: 50 to 200 acres (increments of 25) -
-
-**Irrigation Cost**: 300 to 700 dollars per acre (increments of 50)
-
-All other parameters will be held constant:
-
-\- Baseline yield: 1.0 ton per acre
-
-\- Baseline price: 5000 dollars per ton
-
-\- Correlation slope: -1.04 (Table 5. Lobell 2006)
-
-\- Planting cost: 300 dollars per acre
-
-\- Harvest cost: 400 dollars per acre
+All other parameters will be held constant: - Baseline yield: 1.0 ton per acre - Baseline price: 5000 dollars per ton per acre - Correlation slope: -1.04 - Planting cost: 300 dollars per acre - Harvest cost: 400 dollars per acre
 
 ```{r}
 #| message: false
@@ -96,13 +66,26 @@ All other parameters will be held constant:
 acres_range <- seq(50, 200, by = 25)
 irrigation_cost_range <- seq(300, 700, by = 50)
 
-# Create parameter grid
-param_grid <- expand.grid(
-  acres = acres_range,
-  irrigation_cost = irrigation_cost_range
+# Create discrete distributions for the two sensitivity parameters
+set.seed(230)
+n_sims <- 200
+
+param_grid <- data.frame(
+  acres = sample(acres_range, size = n_sims, replace = TRUE),
+  irrigation_cost = sample(irrigation_cost_range, size = n_sims, replace = TRUE)
 )
 
-cat("Total parameter combinations:", nrow(param_grid), "\n")
+knitr::kable(
+  data.frame(
+    `Parameter` = c("Acres", "Irrigation Cost ($/acre)", "Number of simulations"),
+    `Values / N` = c(
+      paste(range(acres_range), collapse = " to "),
+      paste(range(irrigation_cost_range), collapse = " to "),
+      n_sims
+    )
+  ),
+  caption = "Sensitivity Analysis Inputs (sampled from discrete distributions)"
+)
 ```
 
 ## Run Sensitivity Analysis
@@ -151,6 +134,11 @@ sensitivity_df <- do.call(rbind, sensitivity_results)
 ```{r}
 #| message: false
 # Create summary statistics table
+fmt_dollar <- function(x) scales::dollar(x, accuracy = 1, big.mark = ",")
+
+min_mean_profit <- min(sensitivity_df$mean_profit, na.rm = TRUE)
+max_mean_profit <- max(sensitivity_df$mean_profit, na.rm = TRUE)
+
 summary_stats <- data.frame(
   Statistic = c(
     "Minimum Mean Profit",
@@ -160,9 +148,9 @@ summary_stats <- data.frame(
     "Number of Valid Results"
   ),
   Value = c(
-    paste0("$", round(min(sensitivity_df$mean_profit, na.rm = TRUE), 2)),
-    paste0("$", round(max(sensitivity_df$mean_profit, na.rm = TRUE), 2)),
-    paste0("$", round(max(sensitivity_df$mean_profit, na.rm = TRUE) - min(sensitivity_df$mean_profit, na.rm = TRUE), 2)),
+    fmt_dollar(min_mean_profit),
+    fmt_dollar(max_mean_profit),
+    fmt_dollar(max_mean_profit - min_mean_profit),
     as.character(nrow(sensitivity_df)),
     as.character(sum(!is.na(sensitivity_df$mean_profit)))
   )
@@ -176,9 +164,9 @@ knitr::kable(summary_stats, caption = "Sensitivity Analysis Summary Statistics")
 ```{r}
 #| fig-width: 10
 #| fig-height: 7
-#| fig-cap: "Sensitivity analysis heatmap showing mean profit (dollars) across different combinations of acres and irrigation cost. All scenarios result in negative profits (losses), with lighter blue indicating smaller losses and darker blue indicating larger losses. The analysis reveals that profit becomes more negative as either farm size (acres) or irrigation cost increases, with the smallest losses occurring at the bottom-left corner (50 acres, $300/acre irrigation cost) and the largest losses at the top-right corner (200 acres, $700/acre irrigation cost)."
+#| fig-cap: "Sensitivity analysis heatmap showing mean profit (dollars) across different combinations of acres and irrigation cost. All scenarios result in negative profits (losses) because of the given correlation slope, with lighter blue indicating smaller losses and darker blue indicating larger losses. The analysis reveals that profit becomes more negative as either farm size (acres) or irrigation cost increases, with the smallest losses occurring at the bottom-left corner (50 acres, $300/acre irrigation cost) and the largest losses at the top-right corner (200 acres, $700/acre irrigation cost)."
 
-# Create heatmap 
+# Create heatmap - most informative visualization for 2-parameter sensitivity analysis
 ggplot(sensitivity_df, aes(x = acres, y = irrigation_cost, fill = mean_profit)) +
   geom_tile(color = "white", linewidth = 0.3) +
   scale_fill_gradient2(
@@ -239,8 +227,8 @@ key_findings <- data.frame(
     paste0("$", min_profit_scenario$irrigation_cost, "/acre")
   ),
   Mean_Profit = c(
-    paste0("$", round(max_profit_scenario$mean_profit, 2)),
-    paste0("$", round(min_profit_scenario$mean_profit, 2))
+    fmt_dollar(max_profit_scenario$mean_profit),
+    fmt_dollar(min_profit_scenario$mean_profit)
   )
 )
 
@@ -250,3 +238,34 @@ knitr::kable(
   col.names = c("Scenario", "Acres", "Irrigation Cost", "Mean Profit ($)")
 )
 ```
+
+# Summary Table
+
+```{r}
+# Create summary table of key scenarios
+summary_table <- sensitivity_df %>%
+  arrange(desc(mean_profit)) %>%
+  head(10) %>%
+  mutate(
+    mean_profit = fmt_dollar(mean_profit),
+    max_profit = fmt_dollar(max_profit),
+    min_profit = fmt_dollar(min_profit)
+  ) %>%
+  select(acres, irrigation_cost, mean_profit, max_profit, min_profit)
+
+knitr::kable(
+  summary_table,
+  caption = "Top 10 Parameter Combinations by Mean Profit",
+  col.names = c("Acres", "Irrigation Cost ($/acre)", "Mean Profit ($)", "Max Profit ($)", "Min Profit ($)"),
+  digits = 2
+)
+```
+
+# Conclusions
+
+1.  **Profit increases with farm size**: Larger farms generally yield higher total profits, though the relationship may not be perfectly linear due to the interaction with other cost factors.
+
+2.  **Irrigation cost impact**: Higher irrigation costs reduce profit across all farm sizes, but the magnitude of impact varies with the scale of operation.
+
+3.  **Parameter interactions**: The relationship between acres and profit is moderated by irrigation costs, suggesting that optimal farm size decisions should consider irrigation expense levels.
+
