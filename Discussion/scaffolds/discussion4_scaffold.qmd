@@ -1,0 +1,137 @@
+---
+title: "Discussion_sensitivity"
+format: revealjs
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(here)
+library(tidyverse)
+library(sensitivity)
+library(purrr)
+
+source(here("R/compute_almond_yield.R"))
+clim <- read.delim(here("Data/clim.txt"), sep = " ")
+```
+
+## Sobol in R {.scrollable}
+
+-   *Sensitivity* package
+
+-   Sobol Indices require estimation - and there are different methods to do that
+
+-   The *Sensitivity* package has several of those
+
+-   today we will use *sobolSalt* - which uses a method by Saltelli (who has written extensively on Sensitivity analysis)
+
+-   R help pages for *Sensitivity* provide many good references
+
+## Sobol - how to {.scrollable}
+
+-   run Sobol to get parameter sets in a sensitivity analysis object
+-   run model with those parameter sets
+-   *tell* the senstivity object about results associated with each parameter set
+-   look at sensitivity analysis indices from Sobol
+
+Generation of parameter sets slightly different
+
+-   generate **two** samples of parameter sets by sampling from a-priori (expected) distributions
+-   these would be the "hypothetical" distributions based on assumptions about the data
+-   ideally these would be distributions that you actually sampled
+
+# Almond Yield with Sobol
+
+First we need to generate parameter sets for the Sobol analysis
+
+-   2 sets of samples of all of the parameters, we will make these up by sampling from expected distributions
+-   use *sobolSalt* to generate the parameter sets
+
+```{r sobolpar}
+
+# generate two examples of random number from parameter distributions
+
+
+
+# repeat sampling
+
+
+# there are different versions of sobol functions that have different approaches for estimating parameters and indices, we use an approach implemented by jansen
+
+
+
+
+# Take a look at the Sobol generated sensitivity object
+# your parameters sets for sensitivity analysis are in X
+```
+
+## Steps: Compute Sobol Indices {.scrollable}
+
+now run model for Sobol generated parameter sets and compute indices
+
+```{r sobolrun}
+# run model for all parameter sets
+# make sure you give the parameters names
+
+
+
+# main effect:  partitions variance (main effect without co-variance) - sums approximately to one
+
+# useful to add names
+
+
+# total effect - accounts for parameter interactions
+
+
+# Both the main effect and total effect can tell us something about how the parameter influences results
+
+
+print(sens_Catm_Sobol)
+```
+
+## Steps: Interpreting Sobol Indices {.scrollable}
+
+-   pay attention to values of the indices and confidence intervals
+    -   if 0 is within the confidence interval, parameter uncertainty is not influencing output
+-   substantial differences between total effect and first order indices suggest parameter interactions
+
+TIP: a useful plotting strategy is to plot model output against parameter with the highest total effect and then use the parameter with second highest total effect for color
+
+## Steps: Plotting {.scrollable}
+
+-   uncertainty in the output
+
+-   parameter-output variation for the most sensitive parameters
+
+```{r sobolplot}
+# graph two most sensitive parameters
+
+
+# look at overall gs sensitvity to uncertainty
+
+
+# look at response of conductance to the two most important variables
+
+```
+
+## Second order indices {.scrollable}
+
+Optional for this course
+
+If you want to also compute a second order indices you need to use a different variation. (scheme=B)
+
+There are multiple implementation of Sobol in the *sensitivity* package, they can be more or less stable I find *sobolSalt* works well
+
+```{r, alternative}
+
+
+# main effect:  partitions variance (main effect without co-variance) - sums approximately to one
+
+
+# total effect - accounts for parameter interactions
+
+# second order parameters interaction in controlling sensitivity
+# parameters are in order, interactiosn are small here
+
+```

@@ -1,0 +1,323 @@
+---
+title: "TEMPLATE - `{ggplot2}` review"
+author: "Your Name"
+date: 2026-01-07
+toc: true
+---
+
+::: {.callout-note}
+This template follows the [`{ggplot2}` review slides](https://eds-240-data-viz.github.io/course-materials/lecture-slides/SLIDES-ggplot-review#/title-slide){target="_blank}. Please be sure to cross-reference the slides, which contain important information and additional context!
+:::
+
+## Setup
+
+```{r}
+#| eval: true
+#| echo: true
+#| message: false
+#| warning: false
+# load packages ----
+library(tidyverse)
+library(patchwork)
+library(palmerpenguins)
+```
+
+## Tidy Data Review
+
+Example untidy / wide data: 
+
+```{r}
+# create some untidy temperature data ----
+temp_data_wide <- tribble(
+  ~date, ~station1, ~station2,  ~station3,
+  "2023-10-01", 30.1, 29.8,  31.2,
+  "2023-11-01", 28.6, 29.1,  33.4,
+  "2023-12-01", 29.9, 28.5,  32.3
+)
+
+# print it out ----
+print(temp_data_wide)
+```
+
+Using `pivot_longer()` to "lengthen" / tidy our data:
+
+```{r}
+# convert data from wide > long ----
+temp_data_long <- temp_data_wide |> 
+  pivot_longer(cols = starts_with("station"),
+               names_to = "station_id",
+               values_to = "temp_c")
+
+# print it out ----
+print(temp_data_long)
+```
+
+## Plot #1
+
+Explore the relationship between penguin **bill length** and **bill depth**. Our goals are to review:
+
+1. initializing a plot object and adding a geometry layer to represent our data
+2. when to define data & map variables globally (e.g. within `ggplot()`) vs. locally (e.g. within a `geom_*()`)
+3. updating how aesthetic mappings manifest visually aka scaling
+4. piping into a ggplot
+
+### Example 1 (the basics)
+
+- initialize a plot object
+- define data & map aesthetics (also, omitting argument names)
+- add a geometry layer
+- update how aesthetic mappings manifest visually (i.e. scaling)
+- map custom colors
+
+```{r}
+#| warning: false
+#..........scatter plot with custom categorical colors...........
+```
+
+### Example 2 (mapping color to continuous variable)
+
+```{r}
+#| warning: false
+#...........scatter plot with custom continuous colors...........
+ggplot(penguins, aes(x = bill_length_mm, y = bill_depth_mm)) + 
+  geom_point()
+```
+
+### Example 3 (updating color for all points)
+
+```{r}
+#| warning: false
+#................scatter plot with all blue points...............
+ggplot(penguins, aes(x = bill_length_mm, y = bill_depth_mm)) + 
+  geom_point()
+```
+
+### Example 4 (local vs. global data & variable mappings) 
+
+- define data and mappings within `geom_*()` (locally) rather than in `ggplot()` (globally) -- helpful if you plan to include multiple geoms with different mappings (e.g. you're plotting data from multiple data frames):
+
+```{r}
+#| warning: false
+#| message: false
+#..............create a separate penguins_summary df.............
+penguins_summary <- penguins |>
+  drop_na() |> 
+  group_by(species) |> 
+  summarize(
+    mean_bill_length_mm = mean(bill_length_mm),
+    mean_bill_depth_mm = mean(bill_depth_mm)
+  )
+
+#..........create ggplot with layers from different dfs..........
+```
+
+### Example 5 & 6 (mapping variables globally vs. locally)
+
+- global mappings are passed down to all subsequent layers:
+
+```{r}
+#| warning: false
+#| message: false
+#.............scatterplot with lms fitted to species.............
+ggplot(penguins, aes(x = bill_length_mm, y = bill_depth_mm)) +
+  geom_point()
+```
+
+- local mappings only apply to that particular layer:
+
+```{r}
+#| warning: false
+#| message: false
+#..........scatterplot with lm fitted to entire data set.........
+ggplot(penguins, aes(x = bill_length_mm, y = bill_depth_mm)) +
+  geom_point()
+```
+
+### Example 7 (piping data into a ggplot)
+
+- useful if you need to do a small bit of wrangling first, but don't want to create a whole new df
+
+```{r}
+#| warning: false
+#........filter for Gentoo penguins, then pipe into ggplot.......
+```
+
+## Plot #2
+
+Explore **penguin species counts**. Our goals are to review:
+
+1. statistical transformations -- what are they, how to identify the default, and how to update them
+2. position adjustments -- what are they, how to identify the default, and how to update them
+3. coordinate systems -- what are they, how to identify the default, and how to update them    
+4. updating non-data elements using pre-built themes and the `theme()` function
+
+### Example 1 (the basics + default stat)
+
+- initialize a plot object
+- map aesthetics
+- add a geometry layer
+- explore default statistical transformations (reading documentation is important here!)
+
+```{r}
+#| warning: false
+#...................bar plot with default stat...................
+```
+
+### Example 2 (override default stat)
+
+- let's say we have a df that already contains calculated species count values, and we want the height of the bars to be based on those count values: 
+
+```{r}
+#| warning: false
+
+#........................new summarized df.......................
+penguin_summary <- penguins |> 
+  count(species) 
+
+#..create bar heights based on `identity` of values in `n` col...
+```
+
+**Note:** See the slides for an example of overriding the default stat *mapping* (e.g. displaying these y-axis values as proportions, rather than counts)
+
+### Example 3 (default position adjustment)
+
+- position adjustments tweak position of elements to resolve overlapping geoms
+- all geoms have a default position (e.g. bar plots have `position = "stack"`) -- see documentation
+- let's say we now want to visualize penguin counts by species (bar height) *and* by island (color):
+
+```{r}
+#| warning: false
+#........................default position........................
+ggplot(penguins, aes(x = species)) +
+  geom_bar()
+```
+
+### Example 4 & 5 (override default position adjustments)
+
+- `position = "fill"` creates stacked bars of the same height (easier to compare proportions):
+
+```{r}
+#| warning: false
+#..........................position fill.........................
+ggplot(penguins, aes(x = species, fill = island)) +
+  geom_bar() 
+```
+
+- `position = "dodge"` places overlapping bars directly beside one another (easier to compare individual values):
+
+```{r}
+#| warning: false
+#.........................position dodge.........................
+ggplot(penguins, aes(x = species, fill = island)) +
+  geom_bar() 
+```
+
+### Example 6 (alternatively, use `position_*()`)
+
+```{r}
+#| warning: false
+#.......................position functions.......................
+ggplot(penguins, aes(x = species, fill = island)) +
+  geom_bar() 
+```
+
+### Example 7 (default coordinate system)
+
+```{r}
+#| warning: false
+#....................default coordinate system...................
+ggplot(penguins, aes(x = species)) +
+  geom_bar()
+```
+
+### Example 8 & 9 (alternative coordinate systems)
+
+- flip x & y axes:
+
+```{r}
+#| warning: false
+#............................flip axes...........................
+ggplot(penguins, aes(x = species)) +
+  geom_bar()
+```
+
+- polar coordinates: 
+
+```{r}
+#| warning: false
+#........................polar coordinates.......................
+ggplot(penguins, aes(x = species)) +
+  geom_bar()
+```
+
+### Example 10 (pre-made themes + futher customization with `theme()`)
+
+```{r}
+#| warning: false
+#..................premade theme + custom theme..................
+ggplot(penguins, aes(x = species)) +
+  geom_bar()
+```
+
+## Plot #3 
+
+Explore **penguin flipper lengths**. Our goals are to review:
+
+1. more position adjustments and scales
+2. updating plot labels
+3. faceting
+
+### Example 1 (all in one go!)
+
+- initialize a plot object
+- map aesthetics
+- add a geometry layer
+- map color to species
+- update position adjustment
+- update labels
+- facet by species
+
+```{r}
+#| warning: false
+#| message: false
+#......................labels & facet wrap.......................
+```
+
+## Plot #4
+
+Combine individual plots into a single graphic using `{patchwork}`:
+
+1. Save plots to object names
+
+```{r}
+#.................save scatter plot to obj `p1`..................
+p1 <- ggplot(penguins, aes(x = bill_length_mm, y = bill_depth_mm, color = body_mass_g)) +
+  geom_point() +
+  scale_color_gradient(low = "#F7DD4C", high = "#132B43") +
+  theme(
+    legend.position = "top" # note: this is newly added from earlier!
+  )
+
+#....................save bar plot to obj `p2`...................
+p2 <- ggplot(penguins, aes(x = species)) +
+  geom_bar() +
+  theme_light()
+
+#...................save histogram to obj `p3`...................
+p3 <- ggplot(penguins, aes(x = flipper_length_mm, fill = species)) + 
+  geom_histogram(position = "identity", alpha = 0.5) +
+  scale_fill_manual(values = c("darkorange", "purple", "cyan4"))
+```
+
+2. Assemble single graphic
+
+```{r}
+#| warning: false
+#| message: false
+#..........................stacked plots.........................
+
+#.......................side-by-side plots.......................
+
+#..........side-by-side & stacked plots + graphic title..........
+
+```

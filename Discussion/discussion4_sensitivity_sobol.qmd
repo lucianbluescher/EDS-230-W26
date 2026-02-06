@@ -1,0 +1,175 @@
+---
+title: "Discussion_sensitivity"
+format: revealjs
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(here)
+library(tidyverse)
+library(sensitivity)
+library(purrr)
+
+source(here("R/compute_almond_yield.R"))
+clim <- read.delim(here("Data/clim.txt"), sep = " ")
+```
+
+## Sobol in R {.scrollable}
+
+-   *Sensitivity* package
+
+-   Sobol Indices require estimation - and there are different methods to do that
+
+-   The *Sensitivity* package has several of those
+
+-   today we will use *sobolSalt* - which uses a method by Saltelli (who has written extensively on Sensitivity analysis)
+
+-   R help pages for *Sensitivity* provide many good references
+
+## Sobol - how to {.scrollable}
+
+-   run Sobol to get parameter sets in a sensitivity analysis object
+-   run model with those parameter sets
+-   *tell* the senstivity object about results associated with each parameter set
+-   look at sensitivity analysis indices from Sobol
+
+Generation of parameter sets slightly different
+
+-   generate **two** samples of parameter sets by sampling from a-priori (expected) distributions
+-   these would be the "hypothetical" distributions based on assumptions about the data
+-   ideally these would be distributions that you actually sampled
+
+# Almond Yield with Sobol
+
+First we need to generate parameter sets for the Sobol analysis
+
+-   2 sets of samples of all of the parameters, we will make these up by sampling from expected distributions
+-   use *sobolSalt* to generate the parameter sets
+
+```{r sobolpar}
+
+# generate two examples of random number from parameter distributions
+
+np <- 1000
+Tmincoeff1 <- rnorm(mean = -0.015, sd = 0.005, n = np)
+Tmincoeff2 <- rnorm(mean = -0.0046, sd = 0.0005, n = np)
+Pcoeff1 <- rnorm(mean = -0.07, sd = 0.02, n = np)
+Pcoeff2 <- rnorm(mean = 0.0043, sd = 0.0005, n = np)
+intercep <- rnorm(mean = 0.28, sd = 0.2, n = np)
+
+X1 <- cbind.data.frame(Tmincoeff1, Tmincoeff2, Pcoeff1, Pcoeff2, intercep )
+
+# repeat sampling
+Tmincoeff1 <- rnorm(mean = -0.015, sd = 0.005, n = np)
+Tmincoeff2 <- rnorm(mean = -0.0046, sd = 0.0005, n = np)
+Pcoeff1 <- rnorm(mean = -0.07, sd = 0.02, n = np)
+Pcoeff2 <- rnorm(mean = 0.0043, sd = 0.0005, n = np)
+intercep <- rnorm(mean = 0.28, sd = 0.2, n = np)
+
+X2 <- cbind.data.frame(Tmincoeff1, Tmincoeff2, Pcoeff1, Pcoeff2, intercep )
+
+# there are different versions of sobol functions that have different approaches for estimating parameters and indices, we use an approach implemented by jansen
+
+sens_Catm_Sobol <- sobolSalt(model = NULL, X1, X2, nboot = 100)
+
+
+# Take a look at the Sobol generated sensitivity object
+# your parameters sets for sensitivity analysis are in X
+```
+
+## Steps: Compute Sobol Indices {.scrollable}
+
+now run model for Sobol generated parameter sets and compute indices
+
+```{r sobolrun}
+# run model for all parameter sets
+# make sure you give the parameters names
+
+parms <- as.data.frame(sens_Catm_Sobol$X)
+colnames(parms) <- colnames(X1)
+res <- pmap_dbl(parms, compute_almond_yield, clim=clim)
+
+
+sens_Catm_Sobol <- sensitivity::tell(sens_Catm_Sobol, res, res.names = "yield")
+
+# main effect:  partitions variance (main effect without co-variance) - sums approximately to one
+sens_Catm_Sobol$S
+# useful to add names
+row.names(sens_Catm_Sobol$S) <- colnames(parms)
+sens_Catm_Sobol$S
+
+# total effect - accounts for parameter interactions
+row.names(sens_Catm_Sobol$T) <- colnames(parms)
+sens_Catm_Sobol$T
+
+# Both the main effect and total effect can tell us something about how the parameter influences results
+
+
+print(sens_Catm_Sobol)
+```
+
+## Steps: Interpreting Sobol Indices {.scrollable}
+
+-   pay attention to values of the indices and confidence intervals
+    -   if 0 is within the confidence interval, parameter uncertainty is not influencing output
+-   substantial differences between total effect and first order indices suggest parameter interactions
+
+TIP: a useful plotting strategy is to plot model output against parameter with the highest total effect and then use the parameter with second highest total effect for color
+
+## Steps: Plotting {.scrollable}
+
+-   uncertainty in the output
+
+-   parameter-output variation for the most sensitive parameters
+
+```{r sobolplot}
+# graph two most sensitive parameters
+both <- cbind.data.frame(parms, mean_annual_yields = sens_Catm_Sobol$y)
+
+# look at overall gs sensitvity to uncertainty
+ggplot(both, aes(x = mean_annual_yields)) +
+  geom_histogram() +
+  geom_vline(xintercept = mean(both$mean_annual_yields), col = "cyan")
+
+# look at response of conductance to the two most important variables
+ggplot(both, aes(Pcoeff2, mean_annual_yields, col = Tmincoeff2)) +
+  geom_point() +
+  labs(y = "Mean Annual Yields (ton/acre)", x = "Precip coeff 2")
+
+ggplot(both, aes(Tmincoeff2, mean_annual_yields, col = Pcoeff2)) +
+  geom_point() +
+  labs(y = "Mean Annual Yields (ton/acre)", x = "Temp min coeff 2")
+```
+
+## Second order indices {.scrollable}
+
+Optional for this course
+
+If you want to also compute a second order indices you need to use a different variation. (scheme=B)
+
+There are multiple implementation of Sobol in the *sensitivity* package, they can be more or less stable I find *sobolSalt* works well
+
+```{r, alternative}
+sens_Catm_Sobol2 <- sobolSalt(model = NULL, X1, X2, nboot = 100, scheme = "B")
+
+parms <- as.data.frame(sens_Catm_Sobol2$X)
+colnames(parms) <- colnames(X1)
+res <- pmap_dbl(parms, compute_almond_yield, clim=clim)
+
+
+sens_Catm_Sobol2 <- sensitivity::tell(sens_Catm_Sobol2, res, res.names = "yield")
+
+# main effect:  partitions variance (main effect without co-variance) - sums approximately to one
+row.names(sens_Catm_Sobol2$S) <- colnames(parms)
+sens_Catm_Sobol2$S
+
+# total effect - accounts for parameter interactions
+row.names(sens_Catm_Sobol2$T) <- colnames(parms)
+sens_Catm_Sobol2$T
+
+# second order parameters interaction in controlling sensitivity
+# parameters are in order, interactiosn are small here
+sens_Catm_Sobol2$S2
+```
