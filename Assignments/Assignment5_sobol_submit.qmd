@@ -1,0 +1,314 @@
+---
+title: "Assignment 5: Sobol Sensitivity "
+subtitle: "Atmospheric Conductance Sensitivity Analysis for High Wind, Low Vegetation Setting"
+author: "Lucian Scher"
+date: 2/8/2025
+format: 
+  html:
+    toc: true
+    code-fold: show
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+*Assignment Part I*
+
+The results of the Sobol sensitivity analysis in the Uranium in
+Groundwater Model paper helps environmental problem solving by
+identifying which input parameters influence human health risk from
+uranium exposure in groundwater the most. They found that uranium
+concentration (Cw) dominates ingestion and dermal exposure models, with
+intake rate (IR) and exposure frequency (EF) as secondary drivers. This
+helps us understand how groundwater monitoring programs focused on
+uranium concentration measurements, while recognizing that variations in
+intake rate may require targeted public health interventions such as
+water consumption advisories or alternative water supplies. The Cw-IR
+interaction for ingestion and Cw-F interaction for dermal exposure,
+explain how risk cannot be understood through just single-parameter
+assessments. The problem needs management approaches that address
+contaminant levels and exposure behaviors. Additionally, The low
+sensitivity of body weight and surface area suggest needing less precise
+characterization in risk models, allowing managers to allocate limited
+resources toward more influential variables. This quantitative
+prioritization framework supports evidence-based decision-making by
+directing monitoring efforts, intervention strategies, and regulatory
+focus toward parameters that most substantially affect health outcomes,
+ultimately enabling more effective and cost-efficient protection of
+vulnerable populations in contaminated groundwater regions.
+
+*Assignment Part 2*
+
+# Introduction
+
+This analysis performs a Sobol sensitivity analysis on the atmospheric
+conductance model practiced in class but with conditions higher
+windspeeds lower vegetation.
+
+## Model Background
+
+Atmospheric conductance ($C_{at}$) describes how easily water vapor
+diffuses from vegetation surfaces into the air. The model equations are:
+
+$$C_{at} = \frac{v_m}{6.25 \cdot \left[\ln\left(\frac{z_m-z_d}{z_0}\right)\right]^2}$$
+
+where:
+
+\- $z_d = k_d \cdot h$ (displacement height)
+
+\- $z_0 = k_0 \cdot h$ (roughness length)
+
+\- $z_m = h + 200$ cm (measurement height, 200 cm above vegetation)
+
+\- $h$ = vegetation height (cm)
+
+\- $v$ = windspeed (cm/s)
+
+\- $k_d$ = 0.7 (default)
+
+\- $k_0$ = 0.1 (default)
+
+## Parameter Distributions
+
+-   **Windspeed** ($v$): Normal distribution, $\mu = 300$ cm/s,
+    $\sigma = 50$ cm/s
+-   **Vegetation height** ($h$): Uniform distribution, 3.5 - 5.5 m
+    (350 - 550 cm)
+-   $k_d$: Normal distribution, $\mu = 0.7$, $\sigma = 0.007$
+-   $k_0$: Normal distribution, $\mu = 0.1$, $\sigma = 0.001$
+
+# Setup
+
+```{r setup}
+#| message: false
+#| warning: false
+
+# Load required libraries
+library(sensitivity)
+library(tidyverse)
+
+# Set seed
+set.seed(10)
+```
+
+# Define Atmospheric Conductance Function
+
+```{r define-function}
+#| label: catm-function
+
+#' Calculate atmospheric conductance
+#' 
+#' @param height Vegetation height (cm)
+#' @param v Windspeed (cm/s)
+#' @param k_d Displacement height coefficient (default = 0.7)
+#' @param k_0 Roughness length coefficient (default = 0.1)
+#' @param z_m_offset Height above vegetation for windspeed measurement (cm, default = 200)
+#' @return Atmospheric conductance (mm/s)
+
+Catm <- function(height, v, k_d = 0.7, k_0 = 0.1, z_m_offset = 200) {
+  # Calculate measurement height (200 cm above vegetation)
+  z_m <- height + z_m_offset
+  
+  # Calculate displacement height and roughness length
+  z_d <- k_d * height
+  z_0 <- k_0 * height
+  
+  # Check that z_m > z_d (measurement height must be above displacement height)
+  if (z_m <= z_d) {
+    warning("Measurement height (z_m) must be greater than displacement height (z_d)")
+    return(NA)
+  }
+  
+  # Check that z_0 > 0 (roughness length must be positive)
+  if (z_0 <= 0) {
+    warning("Roughness length (z_0) must be positive")
+    return(NA)
+  }
+  
+  # Calculate atmospheric conductance
+  C_at <- v / (6.25 * (log((z_m - z_d) / z_0))^2)
+  
+  return(C_at)
+}
+```
+
+# Generate Parameter Sets Using Sobol
+
+```{r generate-parameters}
+#| label: sobol-parameters
+
+np <- 1000 # Number of parameters
+
+# First set of random samples from parameter distributions
+
+k_0_set1 <- rnorm(n = np, mean = 0.1, sd = 0.001) 
+k_d_set1 <- rnorm(n = np, mean = 0.7, sd = 0.007)
+v_set1 <- rnorm(n = np, mean = 300, sd = 50)
+height_set1 <- runif(n = np, min = 350, max = 550) # in cm
+
+# Combine into first parameter matrix
+X1 <- cbind.data.frame(
+  k_0 = k_0_set1,
+  k_d = k_d_set1,
+  v = v_set1,
+  height = height_set1
+)
+
+# Second set of random samples
+k_0_set2 <- rnorm(n = np, mean = 0.1, sd = 0.001)
+k_d_set2 <- rnorm(n = np, mean = 0.7, sd = 0.007)
+v_set2 <- rnorm(n = np, mean = 300, sd = 50)
+height_set2 <- runif(n = np, min = 350, max = 550)
+
+# Combine into second parameter matrix
+X2 <- cbind.data.frame(
+  k_0 = k_0_set2,
+  k_d = k_d_set2,
+  v = v_set2,
+  height = height_set2
+)
+
+# Create Sobol sensitivity analysis object with 100 bootstrap samples
+sens_Catm_Sobol <- sobolSalt(model = NULL, X1, X2, nboot = 100)
+```
+
+# Run Model for All Parameter Sets
+
+```{r run-model}
+#| label: run-conductance-model
+
+# Extract parameters from Sobol object
+parms <- as.data.frame(sens_Catm_Sobol$X)
+
+# Ensure column names match parameter names
+colnames(parms) <- colnames(X1)
+
+# Run atmospheric conductance model for each parameter set
+res <- pmap_dbl(parms, Catm)
+
+# Store estimations in Sobol sensitivity object
+sens_Catm_Sobol <- sensitivity::tell(sens_Catm_Sobol, res, res.names = "ga")
+```
+
+# Compute Sobol Sensitivity Indices
+
+```{r sobol-indices}
+#| label: calculate-indices
+
+# First-order sensitivity indices
+# Add names to output 
+row.names(sens_Catm_Sobol$S) <- colnames(parms)
+
+# Total effect sensitivity indices
+# Add names to output 
+row.names(sens_Catm_Sobol$T) <- colnames(parms)
+
+# Extract total effect indices with confidence intervals for ranking
+total_effects <- sens_Catm_Sobol$T
+
+# Create a data frame for easier manipulation and ranking
+te_df <- data.frame(
+  parameter = rownames(total_effects),
+  total_effect = total_effects[, "original"],
+  lower_ci = total_effects[, "min. c.i."],
+  upper_ci = total_effects[, "max. c.i."]
+)
+
+# Sort by total effect
+te_df <- te_df[order(te_df$total_effect, decreasing = TRUE), ]
+
+# second highest total effect for plotting
+second_most_sensitive <- te_df$parameter[2]
+```
+
+# Visualize Results
+
+## Graph of Uncertainty in Response Variable
+
+```{r plot-distribution}
+#| label: plot-conductance-distribution
+#| fig-height: 5
+#| fig-width: 7
+
+# Combine parameters and results for plotting
+both <- cbind.data.frame(parms, gs = sens_Catm_Sobol$y)
+
+# Plot histogram of conductance values
+ggplot(both, aes(x = gs)) +
+  geom_histogram(bins = 50, fill = "steelblue", alpha = 0.7, color = "white") +
+  geom_vline(xintercept = mean(both$gs), 
+             col = "red", 
+             linetype = "dashed", 
+             linewidth = 1) +
+  labs(
+    title = "Distribution of Atmospheric Conductance Estimates",
+    subtitle = "Accounting for parameter uncertainty",
+    x = "Conductance (mm/s)",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  annotate("text", 
+           x = mean(both$gs), 
+           y = Inf, 
+           label = paste("Mean =", round(mean(both$gs), 2), "mm/s"),
+           vjust = 1.5,
+           hjust = -0.1,
+           color = "red",
+           size = 3.5)
+```
+
+## Graph of Relationship Between Output and Windspeed
+
+```{r plot-windspeed}
+#| label: plot-vs-windspeed
+#| fig-height: 6
+#| fig-width: 8
+
+# Plot conductance against windspeed (x-axis) colored by height
+
+color_col <- both[[second_most_sensitive]]
+ggplot(both, aes(x = v, y = gs, color = color_col)) +
+  geom_point(alpha = 0.6, size = 0.8) +
+  scale_color_gradient(low = "blue", high = "red", name = second_most_sensitive) +
+  labs(
+    title = "Atmospheric Conductance vs. Windspeed",
+    subtitle = paste("Colored by height (2nd most sensitive parameter)"),
+    x = "Windspeed (cm/s)",
+    y = "Conductance (mm/s)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+# Discussion
+
+## Sobol Sensitivity Indices
+
+```{r display-indices}
+#| label: show-indices
+
+# Format first-order indices
+first_order_df <- as.data.frame(sens_Catm_Sobol$S)
+first_order_df <- first_order_df[, c("original", "min. c.i.", "max. c.i.")]
+colnames(first_order_df) <- c("First-Order Index", "Lower CI (95%)", "Upper CI (95%)")
+first_order_df <- first_order_df[order(first_order_df$`First-Order Index`, decreasing = TRUE), ]
+
+# Format total effect indices
+total_effect_df <- as.data.frame(sens_Catm_Sobol$T)
+total_effect_df <- total_effect_df[, c("original", "min. c.i.", "max. c.i.")]
+colnames(total_effect_df) <- c("Total Effect Index", "Lower CI (95%)", "Upper CI (95%)")
+total_effect_df <- total_effect_df[order(total_effect_df$`Total Effect Index`, decreasing = TRUE), ]
+
+# Display tables
+knitr::kable(first_order_df, 
+             digits = 4, 
+             caption = "First-Order Sensitivity Indices")
+
+knitr::kable(total_effect_df, 
+             digits = 4, 
+             caption = "Total Effect Sensitivity Indices")
+```
+
+## Sensitivity to windspeed change
+
+In our analysis windspeed sensitivity is greater compared to our class settings with lower windspeeds and taller vegetation. Windspeed remains the dominant parameter (highest total effect index) because it appears directly in the numerator of the conductance equation, creating a linear relationship. The higher variability also creates a wider parameter range, which lets windspeed explain more variance in the output. The higher mean windspeed (300 cm/s) means that the same relative uncertainty translates to larger variations in conductance. The shorter vegetation affects the denominator structure but does not diminish windspeed's importance, as the direct multiplicative relationship in the numerator ensures windspeed remains the primary driver of conductance variability.

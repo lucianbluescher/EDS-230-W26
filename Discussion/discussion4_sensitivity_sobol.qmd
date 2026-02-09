@@ -13,6 +13,7 @@ library(sensitivity)
 library(purrr)
 
 source(here("R/compute_almond_yield.R"))
+source(here("R/compute_almond_yield2.R"))
 clim <- read.delim(here("Data/clim.txt"), sep = " ")
 ```
 
@@ -52,7 +53,7 @@ First we need to generate parameter sets for the Sobol analysis
 
 # generate two examples of random number from parameter distributions
 
-np <- 1000
+np <- 100
 Tmincoeff1 <- rnorm(mean = -0.015, sd = 0.005, n = np)
 Tmincoeff2 <- rnorm(mean = -0.0046, sd = 0.0005, n = np)
 Pcoeff1 <- rnorm(mean = -0.07, sd = 0.02, n = np)
@@ -89,7 +90,7 @@ now run model for Sobol generated parameter sets and compute indices
 
 parms <- as.data.frame(sens_Catm_Sobol$X)
 colnames(parms) <- colnames(X1)
-res <- pmap_dbl(parms, compute_almond_yield, clim=clim)
+res <- pmap_dbl(parms, compute_almond_yield2, clim=clim)
 
 
 sens_Catm_Sobol <- sensitivity::tell(sens_Catm_Sobol, res, res.names = "yield")
