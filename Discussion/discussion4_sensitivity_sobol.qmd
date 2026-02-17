@@ -12,7 +12,10 @@ library(tidyverse)
 library(sensitivity)
 library(purrr)
 
+<<<<<<< HEAD
 source(here("R/compute_almond_yield.R"))
+=======
+>>>>>>> upstream
 source(here("R/compute_almond_yield2.R"))
 clim <- read.delim(here("Data/clim.txt"), sep = " ")
 ```
@@ -73,7 +76,7 @@ X2 <- cbind.data.frame(Tmincoeff1, Tmincoeff2, Pcoeff1, Pcoeff2, intercep )
 
 # there are different versions of sobol functions that have different approaches for estimating parameters and indices, we use an approach implemented by jansen
 
-sens_Catm_Sobol <- sobolSalt(model = NULL, X1, X2, nboot = 100)
+sens_almond_sobol <- sobolSalt(model = NULL, X1, X2, nboot = 100)
 
 
 # Take a look at the Sobol generated sensitivity object
@@ -88,27 +91,27 @@ now run model for Sobol generated parameter sets and compute indices
 # run model for all parameter sets
 # make sure you give the parameters names
 
-parms <- as.data.frame(sens_Catm_Sobol$X)
+parms <- as.data.frame(sens_almond_sobol$X)
 colnames(parms) <- colnames(X1)
 res <- pmap_dbl(parms, compute_almond_yield2, clim=clim)
 
 
-sens_Catm_Sobol <- sensitivity::tell(sens_Catm_Sobol, res, res.names = "yield")
+sens_almond_sobol <- sensitivity::tell(sens_almond_sobol, res, res.names = "yield")
 
 # main effect:  partitions variance (main effect without co-variance) - sums approximately to one
-sens_Catm_Sobol$S
+sens_almond_sobol$S
 # useful to add names
-row.names(sens_Catm_Sobol$S) <- colnames(parms)
-sens_Catm_Sobol$S
+row.names(sens_almond_sobol$S) <- colnames(parms)
+sens_almond_sobol$S
 
 # total effect - accounts for parameter interactions
-row.names(sens_Catm_Sobol$T) <- colnames(parms)
-sens_Catm_Sobol$T
+row.names(sens_almond_sobol$T) <- colnames(parms)
+sens_almond_sobol$T
 
 # Both the main effect and total effect can tell us something about how the parameter influences results
 
 
-print(sens_Catm_Sobol)
+print(sens_almond_sobol)
 ```
 
 ## Steps: Interpreting Sobol Indices {.scrollable}
@@ -127,7 +130,7 @@ TIP: a useful plotting strategy is to plot model output against parameter with t
 
 ```{r sobolplot}
 # graph two most sensitive parameters
-both <- cbind.data.frame(parms, mean_annual_yields = sens_Catm_Sobol$y)
+both <- cbind.data.frame(parms, mean_annual_yields = sens_almond_sobol$y)
 
 # look at overall gs sensitvity to uncertainty
 ggplot(both, aes(x = mean_annual_yields)) +
@@ -153,24 +156,27 @@ If you want to also compute a second order indices you need to use a different v
 There are multiple implementation of Sobol in the *sensitivity* package, they can be more or less stable I find *sobolSalt* works well
 
 ```{r, alternative}
-sens_Catm_Sobol2 <- sobolSalt(model = NULL, X1, X2, nboot = 100, scheme = "B")
+sens_almond_sobol2 <- sobolSalt(model = NULL, X1, X2, nboot = 100, scheme = "B")
 
-parms <- as.data.frame(sens_Catm_Sobol2$X)
+parms <- as.data.frame(sens_almond_sobol2$X)
 colnames(parms) <- colnames(X1)
-res <- pmap_dbl(parms, compute_almond_yield, clim=clim)
+res <- pmap_dbl(parms, compute_almond_yield2, clim=clim)
 
 
-sens_Catm_Sobol2 <- sensitivity::tell(sens_Catm_Sobol2, res, res.names = "yield")
+sens_almond_sobol2 <- sensitivity::tell(sens_almond_sobol2, res, res.names = "yield")
 
 # main effect:  partitions variance (main effect without co-variance) - sums approximately to one
-row.names(sens_Catm_Sobol2$S) <- colnames(parms)
-sens_Catm_Sobol2$S
+row.names(sens_almond_sobol2$S) <- colnames(parms)
+sens_almond_sobol2$S
 
 # total effect - accounts for parameter interactions
-row.names(sens_Catm_Sobol2$T) <- colnames(parms)
-sens_Catm_Sobol2$T
+row.names(sens_almond_sobol2$T) <- colnames(parms)
+sens_almond_sobol2$T
 
 # second order parameters interaction in controlling sensitivity
 # parameters are in order, interactiosn are small here
-sens_Catm_Sobol2$S2
+sens_almond_sobol2$S2
+
+#print the whole object
+print(sens_almond_sobol2)
 ```

@@ -27,11 +27,18 @@ source(here("R/diffusion.R"))
 
 # run our diffusion model (iterative difference equation) with initial concentration of 10, for 8 timestep (size 1m), and 10 space steps (size 1s)
 # using diffusion parameters 0.5 s/m2, 10 m2
-result <- diff1(initialC = 10, nx = 10, dx = 1, nt = 8, dt = 1, D = 0.5, area = 10)
+result <- diff1(initialC = 100, # Initial condition
+                nx = 10,   # number of space steps
+                dx = 0.5,  # distance of space steps
+                nt = 10,   # number of time steps
+                dt = 10,   # distance of time steps
+                D = 0.5,   # Diffusion
+                area = 10) # Meters squared
 
 # a list is returned with our 3 data frames for concentration (conc), qin and qout
 result
-
+str(result)
+head(result)
 # used filled contour to plot results
 head(result$conc)
 filled.contour(result$conc, xlab = "Time", ylab = "Distance")
@@ -111,7 +118,8 @@ filled.contour(resfast_fixtime$qin - resfast_fixtime$qout, xlab = "Time", ylab =
 
 # graph a single point in space through time
 # single column (time)
-plot(resfast_fixtime$conc[, 3], ylab = "Concentration for a location 2 spatial units from origin (1+2")
+plot(resfast_fixtime$conc[, 3], 
+     ylab = "Concentration for a location 2 spatial units from origin (1+2")
 
 # plot all trajectories
 # add a time column to concentration data frame and transform for plotting
@@ -218,7 +226,6 @@ Its useful to turn that summarizing workflow into a function
 
 write a function that extracts a summary metric from diffusion model output
 
-
 ## Workflow for Sensitivity Analysis {.scrollable}
 
 1)  implement (or identify pre-existing) dynamic model
@@ -241,4 +248,3 @@ write a function that extracts a summary metric from diffusion model output
 7)  send the metrics back to the sensitivity analysis object (from sobel or LHS)
 
 8)  plot and analyze results
-
