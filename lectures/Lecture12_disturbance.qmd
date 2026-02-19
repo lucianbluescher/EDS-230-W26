@@ -5,6 +5,8 @@ theme: solarized
 resources: ["img/"]
 css: ["slides.css"]
 editor: visual
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -13,6 +15,7 @@ library(deSolve)
 library(here)
 library(sensitivity)
 ```
+
 ## Negative sobol first order indices {.scrollable}
 
 if confidence interval includes zero - not a problem
@@ -43,9 +46,7 @@ Suggest that the solver (numerical integration) had issues
     *result = ode(y=Pinitial, times=simtimes, func=func, parms=parms, method="daspk")*
     ```
 
--   "stiff" problems are harder for numerical integration to solve - (small changes have big impacts); a threshold carrying capacity does that \
-
-
+-   "stiff" problems are harder for numerical integration to solve - (small changes have big impacts); a threshold carrying capacity does that\
 
 ## Ways to use dynamic models {.scrollable}
 
@@ -83,8 +84,6 @@ Disturbance is integrated into the model [**endogenous**]{style="color:orange"}
 -   do you have a model of the disturbance
     -   could you integrate this model into your existing dynamic model
 
-
-
 ## Tradeoffs {.scrollable}
 
 Exogenous is easier to implement; and may allow you to use output from another model even if there are feedbacks it might still be useful to see what happens after a disturbance
@@ -96,7 +95,6 @@ Endogenous allows for a more complete integration of the disturbance
 What would a model of forest growth look like if we harvest a forest on a regular basis
 
 Some possible options
-
 
 3.  Disturbance is **exogenous** (outside of the model)
 
@@ -120,8 +118,6 @@ Modeling carbon growth in a forest
 We can actually re-use our model - if we assume forest growth follows a logistic growth curve (e.g exponential growth towards a carrying capacity)
 
 Let's consider harvesting as **exogenous** first - simply change the starting condition
-
-
 
 ## Lets consider forest growth using our simple growth model {.scrollable}
 
@@ -306,7 +302,6 @@ Try different combination of growth, carrying capacity and harvest rates...
 -   What does stability mean -
 -   Can you find parameter sets that lead to a stable non-zero forest
 
-
 ## Sensitivity Analysis {.scrollable}
 
 We could do some sensitivity analysis to see how harvest rate, and growth rate interact
@@ -314,7 +309,6 @@ We could do some sensitivity analysis to see how harvest rate, and growth rate i
 Sensitivity of what? What do we care about?
 
 -   where forest ends up after 10 years and 50 years (short and long planning horizons)
-
 
 ## Workflow for Sensitivity Analysis {.scrollable}
 
@@ -341,7 +335,7 @@ Sensitivity of what? What do we care about?
 
 ## Code {.scrollable}
 
-Metric functions -  where forest ends up after 10 years and 50 years (short and long planning horizons)
+Metric functions - where forest ends up after 10 years and 50 years (short and long planning horizons)
 
 ```{r harvestsend, echo=TRUE}
 # fixed amount per year

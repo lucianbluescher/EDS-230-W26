@@ -163,7 +163,7 @@ compute_pop_metrics <- function(result, thresh) {
   # find when populatin is greater than the threshold
   idx <- which(result$P > thresh)[1]
   # account for sitation with threshold is never reached
-  idx <- ifelse(is.na(idx), length(result$P), idx)
+  idx <- ifelse(is.na(idx), length(result$P), idx) 
   threshyear <- result$time[idx]
   # return results
   return(list(maxpop = maxpop, threshyear = threshyear))
@@ -304,7 +304,7 @@ if it doesn't there are numerical issues - try running more samples
 
 ## Error messages from Sobol {.scrollable}
 
-*All values of t are equal to 0.999999999999856 \n Cannot calculate confidence intervals*
+*All values of t are equal to 0.999999999999856* \n Cannot calculate confidence intervals
 
 relationship looks like its completely prescribed - which is true in the case of carrying capacity
 
@@ -326,8 +326,7 @@ Suggest that the solver (numerical integration) had issues
     *result = ode(y=Pinitial, times=simtimes, func=func, parms=parms, method="daspk")*
     ```
 
--   "stiff" problems are harder for numerical integration to solve - (small changes have big impacts); a threshold carrying capacity does that
-## Ways to use dynamic models {.scrollable}
+-   "stiff" problems are harder for numerical integration to solve - (small changes have big impacts); a threshold carrying capacity does that \## Ways to use dynamic models {.scrollable}
 
 Goal: To provide insight into environmental systems, and how they respond to intervention/disturbance/change
 
@@ -378,7 +377,6 @@ Disturbance is integrated into the model [**endogenous**]{style="color:orange"}
     -   Pulse - intervals/one-time - could be a shock to the system
 
 Examples?
-
 
 ## [Assignment]{style="color:orange"} {.scrollable}
 
