@@ -1,0 +1,615 @@
+---
+title: "Modeling Growth and Disturbance with Dynamic Models"
+format: revealjs
+theme: solarized
+resources: ["img/"]
+css: ["slides.css"]
+editor: visual
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(deSolve)
+library(here)
+library(sensitivity)
+```
+## Negative sobol first order indices {.scrollable}
+
+if confidence interval includes zero - not a problem
+
+if it doesn't there are numerical issues - try running more samples
+
+## Error messages from Sobol {.scrollable}
+
+*All values of t are equal to 0.999999999999856* \n Cannot calculate confidence intervals
+
+relationship looks like its completely prescribed - which is true in the case of carrying capacity
+
+## Error messages from ODE {.scrollable}
+
+*In lsoda(y, times, func, parms, ...) : an excessive amount of work (\> maxsteps ) was done, but integration was not successful - increase maxsteps*
+
+Suggest that the solver (numerical integration) had issues
+
+-   increasing maxsteps can help
+
+    ```         
+    *result = ode(y=Pinitial, times=simtimes, func=func, parms=parms, maxsteps=100000) *
+    ```
+
+-   trying different methods
+
+    ```         
+    *result = ode(y=Pinitial, times=simtimes, func=func, parms=parms, method="daspk")*
+    ```
+
+-   "stiff" problems are harder for numerical integration to solve - (small changes have big impacts); a threshold carrying capacity does that \
+
+
+
+## Ways to use dynamic models {.scrollable}
+
+Goal: To provide insight into environmental systems, and how they respond to intervention/disturbance/change
+
+-   predict how something we care above will change over space and/or time (*system evolution*)
+
+-   sensitivity analysis of output
+
+    -   output response to variation in inputs/parameters
+    -   quantifying how summary measures respond to variation in inputs/parameters
+
+## Disturbance {.scrollable}
+
+-   Sometimes we are interested in how dynamics of a system (through time or space) are influenced by a force of change
+
+    -   Press - continuous through time; slowly increasing or decreasing
+    -   Pulse - intervals/one-time - could be a shock to the system
+
+Examples?
+
+## Modelling disturbance {.scrollable}
+
+Disturbance is [**exogenous**]{style="color:orange"}, (modelled outside of the model and then input)
+
+Disturbance is integrated into the model [**endogenous**]{style="color:orange"}
+
+## Questions to ask {.scrollable}
+
+[Exogenous or Endogenous implementation]{style="color:orange"}
+
+-   do you care about feedbacks between the system state and disturbance frequency or severity
+    -   fire is a disturbance that influences vegetation; but vegetation influences likelihood of future fire (YES)
+    -   high intensity precipitation (flood events) might be a disturbance; but streamflow response probably doesn't impact likelihood of future high intensity precipitation (NO)
+-   do you have a model of the disturbance
+    -   could you integrate this model into your existing dynamic model
+
+
+
+## Tradeoffs {.scrollable}
+
+Exogenous is easier to implement; and may allow you to use output from another model even if there are feedbacks it might still be useful to see what happens after a disturbance
+
+Endogenous allows for a more complete integration of the disturbance
+
+## Modelling disturbance - an example {.scrollable}
+
+What would a model of forest growth look like if we harvest a forest on a regular basis
+
+Some possible options
+
+
+3.  Disturbance is **exogenous** (outside of the model)
+
+    -   initial conditions (e.g. start with a small forest after harvest and model growth)
+
+4.  Disturbance is integrated into the model **endogenous**
+
+    -   a fixed harvest every year
+
+    -   proportional harvest (% of current stock)
+
+We can build this on a forest growth model
+
+## Lets consider forest growth using our simple growth model {.scrollable}
+
+Modeling carbon growth in a forest
+
+-   r is growth rate
+-   K is maximum carbon capacity of the forest
+
+We can actually re-use our model - if we assume forest growth follows a logistic growth curve (e.g exponential growth towards a carrying capacity)
+
+Let's consider harvesting as **exogenous** first - simply change the starting condition
+
+
+
+## Lets consider forest growth using our simple growth model {.scrollable}
+
+Modeling carbon growth in a forest
+
+-   r is growth rate
+-   K is maximum carbon capacity of the forest
+
+We can actually re-use our model - if we assume forest growth follows a logistic growth curve (e.g exponential growth towards a carrying capacity)
+
+Let's consider harvesting as **exogenous** first - simply change the starting condition
+
+## Exogeneous model {.scrollable}
+
+```{r forest, echo=TRUE}
+source(here("R/dpopgrowth.R"))
+
+dpopgrowth
+# set parameters
+forestparms <- list(K = 100, r = 0.2)
+
+# create a time sequence
+tm <- seq(from = 1, to = 100)
+
+# start a small forest
+postfire_initial_carbon <- 2
+
+# watch it grow
+forest <- ode(y = postfire_initial_carbon, times = tm, dpopgrowth, parms = forestparms)
+```
+
+## Exogeneous model - plot {.scrollable}
+
+```{r forestplot, echo=TRUE}
+colnames(forest) <- c("time", "carbon")
+ggplot(as.data.frame(forest), aes(time, carbon)) +
+  geom_line()
+```
+
+# Endogenous Example - Regular Harvest {.scrollable}
+
+Lets consider a regular harvesting of the forest -annual proportional harvest
+
+$$  \frac{\partial C}{\partial t} = r*biomass*(1-\frac{biomass}{K})-harv*biomass$$
+
+How would you change the differential equation to implement this - try it!
+
+-   modify *dpopgrowth*
+
+-   rerun starting with mature conditions (30kgC)
+
+-   harvest 10% of the forest every year
+
+-   run the model for 500 years
+
+-   try changing the harvesting rate to see what happens
+
+## My answer {.scrollable}
+
+We can include harvesting in our forest with a new parameter **harv** (proportional harvesting rate))
+
+I also changed the variable names to be more meaningful
+
+```{r harvest, echo=TRUE}
+# fixed amount per year
+source(here("R/dharvest.R"))
+dharvest
+
+# try it out
+tm <- seq(from = 1, to = 500)
+Cinitial <- 30
+gps <- list(harv = 0.1, K = 100, r = 0.2)
+res <- ode(Cinitial, tm, dharvest, gps)
+colnames(res) <- c("time", "carbon")
+
+ggplot(as.data.frame(res), aes(time, carbon)) +
+  geom_point()
+```
+
+## What does this look like {.scrollable}
+
+```{r harvestplot}
+ggplot(as.data.frame(res), aes(time, carbon)) +
+  geom_point()
+```
+
+## How does harvesting rate effect carbon {.scrollable}
+
+Compute trajectories of forest biomass (or carbon) over time - given different harvesting rates
+
+-   create a vector of different harvesting rates that we want to try
+-   write a wrapper function to run our model and extract trajectories
+-   run the wrapper function for our harvesting rates
+-   graph
+
+## My code {.scrollable}
+
+```{r harvest2, echo=TRUE}
+# what if we harvest a a much greater rates
+# lets vary the harvest rates from 0.0 to 0.4
+
+# save all of the trajectories
+# use a wrapper function to just return the carbon trajectories from ODE output
+getcarbon <- function(Cinitial, tm, harv, K, r, hfunc) {
+  # create parameter list for ODE
+  
+  # run ode
+ 
+  # clean up output
+
+  # return just the carbon trajectory
+
+}
+
+# apply this function to all harvest values
+
+# rows are time, columns are carbon for each harvest scenario
+
+# add names based on harvest
+
+# add time
+
+```
+
+## Plot the results {.scrollable}
+
+-   Notice that stable forest carbon changes with harvest rates
+-   Some forests are not stable - (or forest size goes to zero)
+
+```{r harvest2plot, echo=TRUE}
+# put in to a form where we can plot
+
+
+# graph
+
+
+# notice that stable forest value changes with harvest rates
+
+# notes that some forests are not stable - (or forest size goes to zero)
+
+# see this at the beginning - plot the first 10 years
+
+```
+
+## Stability
+
+-   What does stability mean in this context?
+
+## Using derivatives to algerbraically find stability {.scrollable}
+
+We can more formally find stability by finding the system state when the derivative is zero
+
+$$ \frac{\partial C}{\partial t} = r*biomass*(1-\frac{biomass}{K})-harv*biomass$$
+
+$$ 0 = r*biomass*(1-\frac{biomass}{K})-harv*biomass $$
+
+$$ biomass = K*\frac{r-harv}{r} $$
+
+$$ biomass = 1000 * (0.05-0.04)/0.05 = 200 $$
+
+## Parameter Interactions {.scrollable}
+
+How do different harvest rates interact with different growth rates and carrying capacity?
+
+Common "type" of question - how does disturbance interact with the properties (parameters) of the system?
+
+Explore on your own
+
+Try different combination of growth, carrying capacity and harvest rates...
+
+-   Notice how carbon growth changes...
+-   What does stability mean -
+-   Can you find parameter sets that lead to a stable non-zero forest
+
+## Sensitivity Analysis {.scrollable}
+
+We could do some sensitivity analysis to see how harvest rate, and growth rate interact
+
+Sensitivity of what? What do we care about?
+
+-   where forest ends up after 10 years and 50 years (short and long planning horizons)
+
+
+## Workflow for Sensitivity Analysis {.scrollable}
+
+1)  implement (or identify pre-existing) dynamic model
+
+2)  obtain samples of parameter sets (from sobel or LHS)
+
+3)  build a function that will extract the information (metrics) you want from your dynamic model (output of the ode)
+
+4)  create a data structure to store the metrics for each parameter set - in my example I call it metrics (but could be anything)
+
+5)  decide on initial conditions and time period over which you will run the model
+
+6)  run ODE for each parameter sets to fill in this metrics data structure
+
+    -   its usually helpful to create a wrapper function
+        -   runs ODE
+        -   extracts metrics
+    -   run wrapper function for each parameter sets
+
+7)  send the metrics back to the sensitivity analysis object (from sobel or LHS)
+
+8)  plot and analyze results
+
+## Code {.scrollable}
+
+Metric functions -  where forest ends up after 10 years and 50 years (short and long planning horizons)
+
+```{r harvestsend, echo=TRUE}
+# fixed amount per year
+source(here("R/dharvest.R"))
+
+# compute our two metrics of interest - harvest after 10 and 50 years
+# make it general in case we want to use other times
+compute_short_long_C <- function(carbontime, short = 10, long = 50) {
+  Cshort <- carbontime %>%
+    subset(time == short) %>%
+    select(C)
+  Clong <- carbontime %>%
+    subset(time == long) %>%
+    select(C)
+  # use as numeric to clean up
+  return(list(Cshort = as.numeric(Cshort), Clong = as.numeric(Clong)))
+}
+
+# now lets get our sample parameters
+# lets assume a uniform distribution of harvest rates
+# and of normal growth rates
+np <- 200
+
+r <- rnorm(mean = 0.3, sd = 0.05, n = np)
+harv <- runif(min = 0.0, max = 0.4, n = np)
+K <-runif(min = 50, max = 150, n = np)
+  X1 <- cbind.data.frame(r = r, harv = harv, K=K)
+
+# repeat to get our second set of samples
+r <- rnorm(mean = 0.3, sd = 0.05, n = np)
+harv <- runif(min = 0.0, max = 0.4, n = np)
+K <-runif(min = 50, max = 150, n = np)
+X2 <- cbind.data.frame(r = r, harv = harv, K=K)
+
+# create our sobel object and get sets of parameters for running the model
+
+sens_forest <- sobolSalt(model = NULL, X1, X2, nboot = 300)
+colnames(sens_forest$X) <- c("r", "harv", "K")
+
+head(sens_forest$X)
+
+# do a quick test
+# try it out
+tm <- seq(from = 1, to = 50)
+Cinitial <- 30
+parms <- list(r = sens_forest$X[1, 1], harv = sens_forest$X[1, 2], K = sens_forest$X[1, 3])
+
+res <- ode(y = Cinitial, times = tm, func = dharvest, parms = parms)
+res <- as.data.frame(res)
+colnames(res) <- c("time", "C")
+
+compute_short_long_C(res)
+```
+
+## Build our wrapper function and run for all the parameter sets {.scrollable}
+
+```{r, wrapper, echo=TRUE}
+# use a wrapper function to just return the carbon trajectories
+p_wrapper <- function(r, harv, K, Cinitial, simtimes, odefunc, metricfunc) {
+  parms <- list(r = r, K = K, harv = harv)
+  result <- ode(y = Cinitial, times = simtimes, func = odefunc, parms = parms)
+  result <- as.data.frame(result)
+  colnames(result) <- c("time", "C")
+  # get metrics
+  metrics <- metricfunc(result)
+  return(metrics)
+}
+
+
+# try it out
+tm <- seq(from = 1, to = 50)
+Cinitial <- 30
+
+
+allresults <- as.data.frame(sens_forest$X) %>% pmap(p_wrapper, Cinitial = Cinitial, simtimes = tm, odefunc = dharvest, metricfunc = compute_short_long_C)
+
+# extract out results from pmap into a data frame
+allres <- allresults %>% map_dfr(`[`, c("Cshort", "Clong"))
+# clean up the column names
+allres <- as.data.frame(allres)
+
+head(allres)
+```
+
+## Graph the results {.scrollable}
+
+```{r, wrapperplot }
+tmp <- allres %>% gather(key = "metric", value = "value")
+ggplot(tmp, aes(metric, value, col = metric)) +
+  geom_boxplot()
+```
+
+## Explore more {.scrollable}
+
+-   graph response by parameter
+-   sobol indices
+
+notice how we can see the impact of harvesting - and how growth rates reduce the sustainable harvest
+
+Try it
+
+## Compute Sobol Indices {.scrollable}
+
+```{r sobol2, echo=TRUE}
+# sobol indices
+sens_forest_C50 <- sensitivity::tell(sens_forest, allres$Clong)
+rownames(sens_forest_C50$T) <- c("r", "harv", "K")
+sens_forest_C50$T
+rownames(sens_forest_C50$S) <- c("r", "harv","K")
+sens_forest_C50$S
+```
+
+## Graph impact of harvest rate on growth accounting for uncertainty
+
+Use parameter that has the most impact on the output to color the points
+
+```{r graphs, echo=TRUE}
+# link with parameters to see how parameters impact results
+# report harvest as a percent for easy of interpretation
+allresp <- cbind.data.frame(sens_forest$X, allres)
+ggplot(allresp, aes(harv * 100, Clong, col = K)) +
+  geom_point() +
+  labs(y = "Forest Carbon After 50 years", x = "Harvest Rate (% of current biomass)", col = "Carrying Capacity")
+
+```
+
+## Adding complexity {.scrollable}
+
+what if we wanted to make this model more complex and realistic?
+
+*Differential Equations describe/codify our conceptual model of how the world works*
+
+what would the model look like if we wanted to include the fact that harvest rates are lower for small trees?
+
+what would the model look like it we wanted to account for the impact of precipitation on growth rates?
+
+## Examples {.scrollable}
+
+Reading differential equations to learn about the model
+
+$$
+\begin{aligned}
+\frac{\partial C}{\partial t} 
+  &= P_{\text{adjustment}} \, r \, \text{biomass}
+     \left(1 - \frac{\text{biomass}}{K}\right) \\
+  &\quad - \text{harv} \cdot 
+     \text{harv}_{\text{adjustment}} \cdot \text{biomass}
+\end{aligned}
+$$
+
+## Harvest Adjustment
+
+$$ harv_{adjustment} = \frac{biomass}{biomass+biomass_{H50}} $$ $biomass_{H50}$ is the biomass at which harvest is reduced by 50%
+
+harvest rate is less for young small trees
+
+lets say that harvest is reduced by 50% when biomass is 20 kgC
+
+# Curve {.scrollable}
+
+```{r, harvadjust, echo=TRUE}
+
+biomass = seq(from=0, to=1000, by=1)
+biomass_H50 = 20
+harvadjust = biomass/(biomass+biomass_H50)
+tmp = data.frame(biomass, harvadjust)
+ggplot(tmp, aes(biomass, harvadjust)) +
+  geom_point() +
+  labs(x = "Forest Biomass (kgC)", y = "Harvest Adjustment Factor") +
+  geom_vline(xintercept = biomass_H50, col = "red") 
+
+```
+
+## What about precipitation {.scrollable}
+
+$$ P_{adjustment} = \exp{\frac{(Precip-P_{optimal})^2}{\sigma_{p}^2}} $$
+
+$P_{optimal}$ is precipitation for optimal growth
+
+$\sigma_p$ is a parameter that controls how quickly growth declines as precipitation moves away from optimal
+
+## Curve {.scrollable}
+
+```{r, precipjust, echo=TRUE}
+
+precip = seq(from=0, to=2000, by=10)
+P_optimal = 1000
+sigma_p = 300
+P_adjustment = exp(-((precip-P_optimal)^2/sigma_p^2))
+tmp = data.frame(precip, P_adjustment)
+
+ggplot(tmp, aes(precip, P_adjustment)) +
+  geom_point() +
+  labs(x = "Precipitation (mm/year)", y = "Precipitation Adjustment") +
+  geom_vline(xintercept = P_optimal, col = "red")
+```
+
+## Putting it all together {.scrollable}
+
+$$
+\begin{aligned}
+\frac{\partial C}{\partial t} 
+  &= P_{\text{adjustment}} \, r \, \text{biomass}
+     \left(1 - \frac{\text{biomass}}{K}\right) \\
+  &\quad - \text{harv} \cdot 
+     \text{harv}_{\text{adjustment}} \cdot \text{biomass}
+\end{aligned}
+$$ $$ P_{adjustment} = \exp{\frac{(Precip-P_{optimal})^2}{\sigma_{p}^2}} $$ $$ harv_{adjustment} = \frac{biomass}{biomass+biomass_{H50}} $$
+
+Parameters are:
+
+-   $r$ - growth rate
+-   $K$ - carrying capacity
+-   $harv$ - harvest rate
+-   $biomass_{H50}$ - biomass at which harvest is reduced by
+-   $P_{optimal}$ - precipitation for optimal growth
+-   $\sigma_p$ - parameter that controls how quickly growth declines as precipitation moves away from
+
+## Fixed Harvest {.scrollable}
+
+What if you wanted to take the same amount of carbon each year - what would the model look like?
+
+## What we've learned {.scrollable}
+
+For understanding, estimating, communicating how a system responds to change, dynamic models are a powerful tool - they can be used to predict how something we care about will change over space and/or time (*system evolution*)
+
+-   things that evolve over time/space are often represented as differential equations
+
+    -   the differential equation describes the "theory" of how the system evolves
+
+-   even complex differential equations can be put into models through numerical intergration
+
+-   they can be used to do sensitivity analysis of output
+
+    -   output response to variation in inputs/parameters
+    -   quantifying how summary measures respond to variation in inputs/parameters
+    -   they can be used to explore how disturbance (or intervention) interacts with the properties of the system
+
+## Fixed Harvest Example {.scrollable}
+
+```{r fixed, echo=TRUE}
+source(here("R/dharvestfixed.R"))
+
+dharvestfixed
+
+# try it out with different initial conditions to watch how the system moves to a stable state
+tm <- seq(from = 1, to = 100)
+Cinitial <- 30
+gps <- list(harv = 2, K = 1000, r = 0.05, mincarbon = 20)
+
+res <- ode(Cinitial, tm, dharvestfixed, gps)
+
+colnames(res) <- c("time", "carbon")
+head(res)
+tail(res)
+
+# notice how it fails after a certain length of time
+# try another method
+res <- ode(Cinitial, tm, dharvestfixed, gps, method = "euler")
+colnames(res) <- c("time", "carbon")
+head(res)
+tail(res)
+```
+
+## Plot the results {.scrollable}
+
+```{r fixedplotting, echo=TRUE}
+ggplot(as.data.frame(res), aes(time, carbon)) +
+  geom_point() +
+  labs(y = "Forest Biomass (kgC)", x = "Year", title = "Fixed Harvest of 2kg/year\n Starting conditions 30kgC")
+
+
+ggplot(as.data.frame(res), aes(time, carbon)) +
+  geom_line() +
+  labs(y = "Forest Biomass (kgC)", x = "Year", title = "Fixed Harvest of 2kg/year\n Starting conditions 30kgC")
+
+# why this pattern
+```
+
+Think about what you would need to do to make this realistic
+
+##  {.scrollable}
