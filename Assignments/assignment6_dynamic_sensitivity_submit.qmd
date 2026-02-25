@@ -1,0 +1,358 @@
+---
+title: "Assignment: Using Sobol with an ODE"
+author: "Lucian Scher"
+date: "2/25/26"
+format:
+  pdf: default
+  html: default
+execute:
+  echo: true
+editor: 
+  markdown: 
+    wrap: 72
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(deSolve)
+library(sensitivity)
+```
+
+This homework assignment models forest growth over 300 years using the
+ODE solver and a sobol global sensitivity analysis.
+
+> Model Outline from assignment outline:
+Consider the following model of forest growth (where forest size in measured in units of carbon (C))
+-   $dC/dt  = r*C$ for forests where C is below a threshold canopy closure
+-   $dC/dt = g*(1- C/K)$ for forests where carbon is at or above the threshold canopy closure
+-   and $K$ is a carrying capacity in units of carbon
+The size of the forest ($C$), Canopy closure threshold and carrying capacity are all in units of carbon
+You could think of the canopy closure threshold as the size of the forest at which growth rates change from exponential to linear You can think of $r$, as early exponential growth rate and $g$ as the linear growth rate once canopy closure has been reached
+
+# 1: Implement differential equation model
+
+```{r dforest_model}
+#' Forest growth with canopy closure and carrying capacity
+#'
+#' @param Time time since start (years)
+#' @param C forest carbon (kg C)
+#' @param parms list with elements:
+#'   - r: exponential growth rate before canopy closure
+#'   - g: linear growth rate (kg C / year) after canopy closure
+#'   - C_thresh: canopy closure threshold (kg C)
+#'   - K: carrying capacity (kg C)
+#'
+#' @return list with derivative dC/dt
+dforest_canopy <- function(Time, C, parms) {
+  # unpack parameters
+  r        <- parms$r
+  g        <- parms$g
+  C_thresh <- parms$C_thresh
+  K        <- parms$K
+  
+  # choose equation based on whether forest is below or above canopy closure
+  if (C < C_thresh) {
+    # before canopy closure: exponential growth
+    dC <- r * C
+  } else {
+    # after canopy closure: linear growth with carrying capacity
+    dC <- g * (1 - C / K)
+  }
+  
+  return(list(dC))
+}
+```
+
+# 2: Run the Model
+
+> Run the model for 300 years (using the ODE solver) starting with an initial forest size of 10 kg/C, and using the following parameters:
+-   canopy closure threshold of 50 kgC
+-   $K$ = 250 kg C (carrying capacity)
+-   $r$= 0.01 (exponential growth rate before before canopy closure)
+-   $g$ = 2 kg/year (linear growth rate after canopy closure)
+
+```{r run-base-model}
+# initial conditions and time vector
+Cinitial <- 10          # initial forest size (kg C)
+simtimes <- seq(from = 0, to = 300, by = 1)  # years
+
+# parameter list for the base case
+base_parms <- list(
+  r        = 0.01,
+  g        = 2,
+  C_thresh = 50,
+  K        = 250
+)
+
+# run the ODE solver
+base_result <- ode(
+  y     = Cinitial,
+  times = simtimes,
+  func  = dforest_canopy,
+  parms = base_parms
+)
+
+# name columns and convert to data frame
+base_result <- as.data.frame(base_result)
+colnames(base_result) <- c("time", "C")
+
+head(base_result)
+tail(base_result)
+```
+
+# 3: Graph the results
+
+>  Graph the results. Here you are graphing the trajectory with the parameters as given (e.g no uncertainty)
+
+```{r plot-base-trajectory}
+ggplot(base_result, aes(time, C)) +
+  geom_line(color = "darkgreen", linewidth = 1) +
+  labs(
+    title = "Forest Carbon Trajectory (Deterministic Parameters)",
+    x     = "Time (years)",
+    y     = "Forest Carbon C (kg C)"
+  ) +
+  theme_minimal()
+```
+
+# 4: Run sobol global sensitivity analysis
+
+> Run a sobol global (vary all parameters at the same time) sensitivity analysis that explores how the estimated **maximum forest size** (e.g maximum of $C$ 300 years, varies with these parameters
+-   pre canopy closure growth rate ($r$)
+-   post-canopy closure growth rate ($g$)
+-   canopy closure threshold and carrying capacity($K$)
+Assume that parameters are all normally distributed with means as given above and standard deviation of 10% of mean value
+
+Create the Sobol sampling matrices (X1 and X2) for the four parameters, using normal distributions with means as given in the base case and standard deviations equal to 10% of the mean. Then ensure that any negative values (which don't make sense for these parameters) are set to zero.
+
+```{r sobol-sampling}
+set.seed(123)
+
+# number of parameter samples in each Sobol matrix
+np <- 1000
+
+# base means
+mean_r        <- 0.01
+mean_g        <- 2
+mean_C_thresh <- 50
+mean_K        <- 250
+
+# standard deviations = 10% of mean
+sd_r        <- 0.10 * mean_r
+sd_g        <- 0.10 * mean_g
+sd_C_thresh <- 0.10 * mean_C_thresh
+sd_K        <- 0.10 * mean_K
+
+# first Sobol sample matrix X1
+r1        <- rnorm(np, mean = mean_r,        sd = sd_r)
+g1        <- rnorm(np, mean = mean_g,        sd = sd_g)
+Cthresh1  <- rnorm(np, mean = mean_C_thresh, sd = sd_C_thresh)
+K1        <- rnorm(np, mean = mean_K,        sd = sd_K)
+
+X1 <- cbind.data.frame(
+  r        = r1,
+  g        = g1,
+  C_thresh = Cthresh1,
+  K        = K1
+)
+
+# second Sobol sample matrix X2
+r2        <- rnorm(np, mean = mean_r,        sd = sd_r)
+g2        <- rnorm(np, mean = mean_g,        sd = sd_g)
+Cthresh2  <- rnorm(np, mean = mean_C_thresh, sd = sd_C_thresh)
+K2        <- rnorm(np, mean = mean_K,        sd = sd_K)
+
+X2 <- cbind.data.frame(
+  r        = r2,
+  g        = g2,
+  C_thresh = Cthresh2,
+  K        = K2
+)
+
+# ensure no negative values for parameters where they don't make sense
+X1 <- X1 |> map_df(pmax, 0)
+X2 <- X2 |> map_df(pmax, 0)
+
+head(X1)
+```
+
+Create the Sobol objecet using the `sobolSalt` function, which sets up the design for Sobol sensitivity analysis. We will later “tell” this object with the model outputs to compute the indices.
+
+```{r sobol-object}
+sens_forest <- sobolSalt(
+  model = NULL,
+  X1    = X1,
+  X2    = X2,
+  nboot = 300
+)
+
+colnames(sens_forest$X) <- c("r", "g", "C_thresh", "K")
+head(sens_forest$X)
+```
+
+Define a metric function (taking the ODE output and returning a list), 
+
+```{r forest-metric-function}
+# compute maximum C and C at a target time (100 years)
+compute_forest_metrics <- function(result, time_target = 100) {
+  # result: data frame with columns time and C
+  
+  # maximum forest carbon over the full simulation
+  maxC <- max(result$C)
+  
+  # forest carbon at (or just after) the target time
+  idx <- which(result$time >= time_target)[1]
+  idx <- ifelse(is.na(idx), nrow(result), idx)
+  C_target <- result$C[idx]
+  
+  return(list(maxC = maxC, C_target = C_target))
+}
+```
+
+Wwrapper that runs the ODE and computes the metrics.
+
+```{r forest-wrapper}
+# wrapper function: runs ODE and computes metrics
+forest_wrapper <- function(r, g, C_thresh, K,
+                           Cinitial, simtimes,
+                           odefunc, metricfunc,
+                           metricpars) {
+  # create parameter list for ODE
+  parms <- list(
+    r        = r,
+    g        = g,
+    C_thresh = C_thresh,
+    K        = K
+  )
+  
+  # run the ODE solver (Euler robust for simple models)
+  result <- ode(
+    y      = Cinitial,
+    times  = simtimes,
+    func   = odefunc,
+    parms  = parms,
+    method = "euler"
+  )
+  
+  # clean up
+  result <- as.data.frame(result)
+  colnames(result) <- c("time", "C")
+  
+  # compute metrics
+  metrics <- metricfunc(result, time_target = metricpars$time_target)
+  return(metrics)
+}
+
+# quick test with the first parameter set
+test_metrics <- forest_wrapper(
+  r         = sens_forest$X[1, "r"],
+  g         = sens_forest$X[1, "g"],
+  C_thresh  = sens_forest$X[1, "C_thresh"],
+  K         = sens_forest$X[1, "K"],
+  Cinitial  = Cinitial,
+  simtimes  = simtimes,
+  odefunc   = dforest_canopy,
+  metricfunc = compute_forest_metrics,
+  metricpars = list(time_target = 100)
+)
+
+test_metrics
+```
+
+# 5: Run Sobol Workflow and Boxplot of Maximum Forest Size
+
+> Graph the results of the sensitivity analysis as a box plot of maximum forest size and record the two Sobol indices (**S** and **T**).
+
+```{r run-sobol-workflow}
+# apply wrapper to all parameter sets using pmap 
+allresults <- as.data.frame(sens_forest$X) |>
+  pmap(
+    forest_wrapper,
+    Cinitial   = Cinitial,
+    simtimes   = simtimes,
+    odefunc    = dforest_canopy,
+    metricfunc = compute_forest_metrics,
+    metricpars = list(time_target = 100)
+  )
+
+# extract metrics into a data frame
+allres <- allresults |>
+  map_dfr(`[`, c("maxC", "C_target")) |>
+  as.data.frame()
+
+# rename for clarity: C_target is C at 100 years
+colnames(allres) <- c("maxC", "C_100")
+
+head(allres)
+summary(allres)
+```
+
+```{r boxplot-maxC}
+# boxplot of maximum forest size across parameter sets
+ggplot(allres, aes(x = "Max C over 300 years", y = maxC)) +
+  geom_boxplot(fill = "forestgreen", alpha = 0.7) +
+  labs(
+    title = "Distribution of Maximum Forest Carbon (Sobol Samples)",
+    x     = "",
+    y     = "Maximum Forest Carbon C (kg C)"
+  ) +
+  theme_minimal()
+```
+
+```{r sobol-maxC-indices}
+# Sobol indices for maximum forest size
+sens_forest_maxC <- sensitivity::tell(sens_forest, allres$maxC)
+
+# label rows
+rownames(sens_forest_maxC$S) <- c("r", "g", "C_thresh", "K")
+rownames(sens_forest_maxC$T) <- c("r", "g", "C_thresh", "K")
+
+# first-order indices S
+sens_forest_maxC$S
+
+# total-effect indices T
+sens_forest_maxC$T
+```
+
+# Extra Credit: Sobol Indices for Forest Size After 100 Years
+
+> Compute Sobol indices for a second metric: forest size after a 100 years
+
+I re-use the same Sobol design but “tell” it with the (C) at 100
+years.
+
+```{r sobol-C100-indices}
+# Sobol indices for forest carbon at 100 years
+invisible(capture.output(sens_forest_C100 <- sensitivity::tell(sens_forest, allres$C_100)))
+
+rownames(sens_forest_C100$S) <- c("r", "g", "C_thresh", "K")
+rownames(sens_forest_C100$T) <- c("r", "g", "C_thresh", "K")
+
+# first-order indices S (C at 100 years)
+sens_forest_C100$S
+
+# total-effect indices T (C at 100 years)
+sens_forest_C100$T
+```
+
+```{r boxplot-C100}
+# boxplot of forest size at 100 years
+ggplot(allres, aes(x = "C at 100 years", y = C_100)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.7) +
+  labs(
+    title = "Distribution of Forest Carbon After 100 Years (Sobol Samples)",
+    x     = "",
+    y     = "Forest Carbon C (kg C) at 100 years"
+  ) +
+  theme_minimal()
+```
+
+# 6: Discussion
+
+> In 2-3 sentences, discuss what the results of your simulation might mean. (For example think about how what parameters climate change might influence).
+
+Based on the Sobol indices for maximum forest size, the carrying capacity parameter (K) has the largest total-order index, meaning long-term forest carbon storage is most sensitive to factors that determine ultimate stand size such as site productivity and long-term climate constraints. Growth rate parameters (r) and (g), along with the canopy closure threshold, have stronger influence on short- to medium-term biomass like our forest size at 100 years, which reflects the quickness at which forests respond to climate and management conditions. Climate-change impacts that reduce (K) will likely limit forest carbon storage, while changes that speed up or slow early growth mainly affect how quickly forests approach their potential.

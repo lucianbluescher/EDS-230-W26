@@ -7,6 +7,8 @@ theme: solarized
 resources: ["img/"]
 css: ["slides.css"]
 editor: visual
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
@@ -23,9 +25,9 @@ library(ggpubr)
 
 ## Dynamic models
 
-- differential equations used for prediction, mechanistic understanding, and decision/management support
+-   differential equations used for prediction, mechanistic understanding, and decision/management support
 
-- we have focused on models with one dependent variable (e.g population size, or concentration of a pollutant)
+-   we have focused on models with one dependent variable (e.g population size, or concentration of a pollutant)
 
 ## Systems of equations {.scrollable}
 
@@ -40,8 +42,6 @@ What if we have more than one variable that is evolving through time and space?
 -   household consumption and savings through time (when consumption depends on savings and vice versa)
 
 These require several differential equations that have to be solved simultaneously
-
-
 
 ## Systems of equations {.scrollable}
 
@@ -124,7 +124,7 @@ lotvmod
 
 # note the use of with
 # initial conditions
-currpop <- c(prey = 10, pred = 1)
+currpop <- c(prey = 10, pred = 5)
 
 # time points to see results
 days <- seq(from = 1, to = 100, by = 1)
@@ -527,7 +527,9 @@ $\frac{\partial pred}{\partial t} = eff * \alpha * pred * prey - mort * pred$
 
 # Code {.scrollable}
 
-```{r, varyK}
+```{r varyK}
+#| eval: false
+
 source(here("R/lotvmodvaryingK.R"))
 lotvmodKvar
 

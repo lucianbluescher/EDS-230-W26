@@ -9,7 +9,6 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
 Consider the following model of forest growth (where forest size in measured in units of carbon (C))
 
 -   $dC/dt  = r*C$ for forests where C is below a threshold canopy closure
@@ -56,5 +55,3 @@ You can work in groups or individually
 Compute Sobol indices for a second metric: forest size after a 100 years
 
 ## Grading Rubric
-
-
