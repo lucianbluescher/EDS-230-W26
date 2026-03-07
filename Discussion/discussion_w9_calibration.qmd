@@ -315,7 +315,14 @@ ggplot(subset(msagel, wy == 1985), aes(as.Date(date), str, col=run))+geom_line()
 #try a month from a year
 ggplot(subset(msagel, wy == 1970 & month == 6), aes(as.Date(date), str, col=run))+geom_line()+theme(legend.position = "none") +
   geom_line(data=subset(msage, wy == 1970 & month == 6), aes(as.Date(date), obs), linewidth=2, col="black", linetype=2)+labs(y="Streamflow", x="Date")
+
+# Plot all months
+#try a month from a year
+ggplot(subset(msagel, month == 6), aes(as.Date(date), str, col=run))+geom_line()+theme(legend.position = "none") +
+  geom_line(data=subset(msage, month == 6), aes(as.Date(date), obs), linewidth=2, col="black", linetype=2)+labs(y="Streamflow", x="Date")
 ```
+
+\
 
 ## Calibration metrics for each parameter set {.scrollable}
 

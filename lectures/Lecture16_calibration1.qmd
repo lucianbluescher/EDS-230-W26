@@ -351,6 +351,36 @@ ggplot(msage, aes(as.Date(date), msage[,best_par]))+geom_line(col="red")+
 
 -   add the quiz the column number of your metric
 
+```{r}
+highflow_bias = function(m, o) {
+  # focus on top 10% of observed flows
+  thresh = quantile(o, 0.90, na.rm = TRUE)
+  idx = o >= thresh
+  
+  m_high = m[idx]
+  o_high = o[idx]
+  
+  # mean relative bias in high flows
+  mean((m_high - o_high) / o_high, na.rm = TRUE)
+}
+
+res_high = msage %>% select(-date, -month, -day, -year, -wy, -obs ) %>% map_dbl(highflow_bias, o=msage$obs)
+head(res)
+summary(res)
+
+best_par_low = which.min(abs(res_high))
+best_par_high = which.max(res_high)
+best_par_high
+
+# Plot that parameter set vs observations
+ggplot(msage, aes(as.Date(date), msage[, best_par_high])) +
+  geom_line(col = "red") +
+  geom_line(aes(as.Date(date), obs), col = "black", linetype = 2) +
+  labs(y = "Streamflow", x = "Date")
+```
+
+\
+
 ## Equifinality
 
 -   Many parameter sets yield similar performance

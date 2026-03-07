@@ -1,0 +1,414 @@
+---
+title: "Hydropower Reservoir Methane Emissions"
+subtitle: "A Two-Variable ODE Model of Carbon and CH₄ Dynamics by Biome"
+author: "EDS 241 / ESM 244 — Alternative Assignment 7"
+format:
+  html: default
+execute:
+  echo: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+# tidyverse: data manipulation and plotting (dplyr, ggplot2, tidyr)
+# deSolve: solves ordinary differential equations (ODEs) numerically
+# sf: reads spatial data (shapefiles)
+# here: builds file paths that work across different project layouts
+library(tidyverse)
+library(deSolve)
+library(sf)
+library(here)
+```
+
+# Motivation
+
+Reservoirs created by dams can emit substantial **methane (CH₄)** from flooded biomass and sediments—a concern for the climate footprint of hydropower. Estimating the *anthropogenic* GHG footprint of reservoirs is contentious: some treat gross emissions as the footprint, while others argue only *net* changes visible to the atmosphere—i.e., emissions attributable to damming minus pre-impoundment and displaced fluxes—should count (Prairie et al. 2018). We focus on CH₄ from flooded organic carbon, which Prairie et al. identify as the main *new* anthropogenic source (essentially all reservoir CH₄ is attributable to impoundment, unlike CO₂ where much may be displaced). In this post, we build a simple **two-variable dynamic model** (an ODE: ordinary differential equation, which describes how quantities change over time) of organic carbon and methane in reservoir water, use the GRanD (Global Reservoir and Dam) database to assign parameters by biome, and explore how emissions intensity (CO₂e per MWh) evolves over time and varies across climates. Our goal is to define a stability metric for “low long-run emissions” and use it to compare tropical, temperate, and boreal reservoirs. We'll walk through each code chunk and explain what we're doing and why.
+
+---
+
+# The Model
+
+## Equations
+
+We track two **state variables**—quantities that change over time—over time \(t\) (years):
+
+1. $C_{\mathrm{org}}(t)$: organic carbon stock in flooded biomass and sediment (kg C)
+2. $\mathrm{CH}_4(t)$: methane mass in the reservoir water column (kg CH₄)
+
+The equations below describe how each quantity changes: $dX/dt$ is the rate of change of X with respect to time (how fast X is increasing or decreasing). The dynamics are:
+
+$$
+\frac{dC_{org}}{dt} = I_C - k_{decay}\,C_{org}
+$$
+
+$$
+\frac{dCH_4}{dt} = f_{CH4}\,k_{decay}\,C_{org} - (k_{ox} + k_{emit})\,CH_4
+$$
+
+- $I_C$: external organic carbon input from the catchment (kg C/year)
+- $k_{\mathrm{decay}}$: first-order decomposition rate (1/year)
+- $f_{\mathrm{CH4}}$: fraction of decomposed carbon converted to CH₄ (0–1)
+- $k_{\mathrm{ox}}$: oxidation rate in water column (1/year)
+- $k_{\mathrm{emit}}$: emission/degassing rate (1/year)
+
+This structure produces a strong early CH₄ pulse as flooded carbon decays, then a decline toward a lower steady state. Prairie et al. (2018) review the temporal evolution of reservoir GHG emissions—CO₂ and CH₄ surge after impoundment then decline over years to decades—and our model captures this pattern. The flooded soil and biomass carbon ($C_{\mathrm{org}}$) is the key *new* anthropogenic source they identify; our decomposition term ($k_{\mathrm{decay}} C_{\mathrm{org}}$) represents that process.
+
+## Implementation
+
+We implement the ODE in R as a function that `deSolve::ode` can call. The solver needs a function that takes *time*, *current state* (values of our variables), and *parameters*, and returns the **derivatives** (rates of change) of each state variable. We use `with(as.list(...))` so we can refer to parameters and state variables by name inside the function—a common pattern in ODE code.
+
+```{r reservoir_ch4_ode}
+#' Reservoir methane ODE
+#'
+#' Two-variable model: organic carbon and methane in reservoir water.
+#' deSolve expects this signature: (time, state, parms) -> list of derivatives
+#'
+#' @param time current time (years)
+#' @param state named vector: C_org (kg C), CH4 (kg CH4) at this time
+#' @param parms list: I_C, k_decay, f_CH4, k_ox, k_emit
+#'
+#' @return list of derivatives (dC_org, dCH4) — how fast each variable changes
+reservoir_ch4_ode <- function(time, state, parms) {
+  # Combine parms and state into one named list so we can use names like C_org, k_decay
+  with(as.list(c(parms, state)), {
+    dC_org <- I_C - k_decay * C_org   # carbon: inputs minus decomposition
+    dCH4   <- f_CH4 * k_decay * C_org - (k_ox + k_emit) * CH4  # CH4: production minus oxidation and emission
+    return(list(c(dC_org, dCH4)))
+  })
+}
+```
+
+---
+
+# Parameters by Biome
+
+We assign biomes from **latitude**—a coarse but tractable proxy for climate (tropical = warm, boreal = cold). Each biome gets its own **carbon density** (how much carbon was in the flooded vegetation and soil per hectare) and **rate constants** (how fast carbon decays, what fraction becomes CH₄, etc.). Warmer biomes generally have faster decomposition and higher CH₄ production. Values below are stylized but consistent with IPCC biomass ranges and reservoir CH₄ literature (Barros et al., Deemer et al.).
+
+```{r biome_params}
+biome_pars <- tibble(
+  biome = c("Tropical humid", "Tropical seasonal", "Temperate", "Boreal"),
+  lat_min = c(0, 10, 25, 45),           # latitude band (absolute value)
+  lat_max = c(10, 25, 45, 65),
+  C_veg_ha = c(200, 100, 80, 50),       # aboveground biomass carbon (t C per hectare)
+  C_soil_ha = c(100, 65, 80, 150),      # soil carbon (t C per hectare)
+  k_decay = c(0.08, 0.05, 0.03, 0.02),  # decomposition rate (1/year) — higher in warm climates
+  f_CH4 = c(0.5, 0.35, 0.25, 0.15),     # fraction of decomposed C that becomes CH₄ (vs CO₂)
+  k_ox = c(0.02, 0.025, 0.03, 0.02),    # oxidation rate (CH₄ -> CO₂ in water)
+  k_emit = c(0.1, 0.08, 0.06, 0.05),    # emission rate (CH₄ leaving water to air)
+  I_C_yield = c(5, 3.5, 2.5, 1.5)       # ongoing C input from catchment (t C per km² per year)
+)
+
+knitr::kable(biome_pars, digits = 2, caption = "Biome-specific parameters")
+```
+
+---
+
+# Loading and Preparing GRanD Data {.scrollable}
+
+GRanD is a global database of reservoirs and dams with attributes like location, surface area, storage capacity, and use (irrigation, hydropower, etc.). We load the **shapefile** (a spatial data format with geometry and attributes), drop the geometry for our tabular analysis, and filter to **hydropower** reservoirs with valid area and capacity. GRanD uses `-99` to indicate missing values—we treat those as NA and filter them out. Then we assign each reservoir to a biome from its latitude and compute the initial carbon stock and ongoing C input using our biome-specific parameters.
+
+```{r load_grand}
+# Path to GRanD shapefile — adjust to your project layout (edit if file is elsewhere)
+grand_path <- here("241assn7", "data", "GRanD_Version_1_3", "GRanD_reservoirs_v1_3.shp")
+# Fallback paths if here() root differs (e.g. if QMD is in a different folder)
+if (!file.exists(grand_path)) grand_path <- "241assn7/data/GRanD_Version_1_3/GRanD_reservoirs_v1_3.shp"
+if (!file.exists(grand_path)) grand_path <- "data/GRanD_Version_1_3/GRanD_reservoirs_v1_3.shp"
+
+# Read shapefile (spatial data); st_drop_geometry removes the polygon column for tabular work
+dam_sf <- st_read(grand_path, quiet = TRUE)
+dam_df <- dam_sf %>%
+  st_drop_geometry() %>%
+  # Keep only hydropower reservoirs with valid area, capacity, and latitude
+  filter(MAIN_USE == "Hydroelectricity",
+         AREA_SKM > 0, CAP_MCM > 0,
+         !AREA_SKM %in% c(-99), !CAP_MCM %in% c(-99),
+         !LAT_DD %in% c(-99)) %>%
+  mutate(
+    # GRanD uses -99 for missing; convert to NA so we can handle them later
+    CATCH_SKM = if_else(CATCH_SKM == -99 | CATCH_SKM <= 0, NA_real_, CATCH_SKM),
+    DIS_AVG_LS = if_else(DIS_AVG_LS == -99 | DIS_AVG_LS <= 0, NA_real_, DIS_AVG_LS)
+  )
+
+# Assign each reservoir to a biome based on its latitude (absolute value, so both hemispheres)
+assign_biome <- function(lat) {
+  lat <- abs(lat)
+  case_when(
+    lat < 10  ~ "Tropical humid",
+    lat < 25  ~ "Tropical seasonal",
+    lat < 45  ~ "Temperate",
+    lat < 65  ~ "Boreal",
+    TRUE      ~ NA_character_
+  )
+}
+
+dam_df <- dam_df %>%
+  mutate(biome = assign_biome(LAT_DD))
+
+# Add biome-specific parameters to each reservoir row
+dam_df <- dam_df %>%
+  left_join(biome_pars %>% select(biome, C_veg_ha, C_soil_ha, k_decay, f_CH4, k_ox, k_emit, I_C_yield), by = "biome") %>%
+  filter(!is.na(biome))
+
+# Compute initial carbon stock (C_org0) and ongoing input (I_C) in kg C
+# Area_skm * 100 = area in ha; (C_veg + C_soil) t/ha * 1000 = kg C per ha; multiply
+dam_df <- dam_df %>%
+  mutate(
+    C_org0_kg = AREA_SKM * 100 * (C_veg_ha + C_soil_ha) * 1000,  # initial flooded carbon (kg)
+    I_C_kg = if_else(is.na(CATCH_SKM), 0, CATCH_SKM * I_C_yield * 1000),  # ongoing input; 0 if no catchment data
+    E_day_MWh = pmin(1000, sqrt(CAP_MCM) * 50)   # simplified energy proxy (MWh/day) for CO2e/MWh denominator
+  )
+
+n_reservoirs <- nrow(dam_df)
+cat("Reservoirs used:", n_reservoirs, "\n")
+head(dam_df %>% select(GRAND_ID, RES_NAME, COUNTRY, LAT_DD, biome, AREA_SKM, CAP_MCM, C_org0_kg))
+```
+
+---
+
+# Example Run: One Reservoir per Biome
+
+To illustrate the model, we run it for **one large reservoir per biome** over 100 years. Initial conditions: $C_{\mathrm{org}}(0) = C_{\mathrm{org0}}$ (from our biome-specific carbon density and reservoir area) and $\mathrm{CH}_4(0) = 0$. We pick the largest reservoir by area in each biome so the trajectories are easy to see. We also set **GWP_CH4** (global warming potential of CH₄ relative to CO₂, 100-year horizon)—we use 30, in line with IPCC AR6.
+
+```{r example_runs}
+years <- seq(from = 0, to = 100, by = 1)  # time points at which the ODE solver returns values
+GWP_CH4 <- 30   # 100-year global warming potential: 1 kg CH₄ ≈ 30 kg CO₂ equivalent
+
+# Helper: run the ODE for one reservoir row, return a data frame of time, C_org, CH4
+run_one_reservoir <- function(row) {
+  parms <- list(
+    I_C = row$I_C_kg,
+    k_decay = row$k_decay,
+    f_CH4 = row$f_CH4,
+    k_ox = row$k_ox,
+    k_emit = row$k_emit,
+    E_day_MWh = row$E_day_MWh,
+    GWP = GWP_CH4
+  )
+  y0 <- c(C_org = row$C_org0_kg, CH4 = 0)
+  res <- ode(y = y0, times = years, func = reservoir_ch4_ode, parms = parms)
+  res <- as.data.frame(res)
+  colnames(res) <- c("time", "C_org", "CH4")
+  res$GRAND_ID <- row$GRAND_ID
+  res$RES_NAME <- row$RES_NAME
+  res$biome <- row$biome
+  res$E_day_MWh <- row$E_day_MWh
+  res$k_emit <- row$k_emit
+  res
+}
+
+# Pick one reservoir per biome — the largest by surface area (for clear, visible trajectories)
+reps <- dam_df %>%
+  group_by(biome) %>%
+  slice_max(AREA_SKM, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+# map_dfr: run the ODE for each reservoir and bind results into one data frame (the _dfr means "data frame rows")
+example_results <- map_dfr(1:nrow(reps), \(i) run_one_reservoir(reps[i, ]))
+```
+
+## Time Series of Carbon and Methane
+
+Below we plot how **carbon** and **methane** change over time. We use `pivot_longer` to reshape the data from wide (separate columns for C_org and CH4) to long (one column for "variable" and one for "value"), which ggplot needs to plot both lines on the same facets.
+
+```{r plot_timeseries}
+# pivot_longer: reshape from wide (C_org, CH4 as columns) to long (variable, value) for ggplot
+ex_long <- example_results %>%
+  pivot_longer(cols = c(C_org, CH4), names_to = "variable", values_to = "value")
+
+ggplot(ex_long, aes(time, value, color = variable)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~biome, scales = "free_y", ncol = 2) +
+  labs(x = "Time (years)", y = "Amount (kg C or kg CH₄)", title = "Carbon and Methane Trajectories by Biome") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+**Takeaway:** Across all biomes, organic carbon (red) decreases over time as flooded biomass decays, while methane (teal) shows a characteristic **early pulse**—rising to a peak within 10–20 years, then declining. Tropical humid reservoirs have by far the largest carbon stocks and methane pulses (peaks around 3.5e+11 kg CH₄); boreal and temperate reservoirs show smaller, more gradual dynamics. The relative magnitude of these pulses is strongly biome-dependent, with tropical humid systems dominating due to higher carbon density and faster decomposition rates.
+
+## Phase Plot: C_org vs CH₄
+
+A **phase plot** shows how the two variables relate to each other over time (rather than vs time). Each point is a moment in time; the path traces the trajectory. We can see the system spiraling or settling toward a long-run state.
+
+```{r plot_phase}
+ggplot(example_results, aes(C_org, CH4, color = biome)) +
+  geom_path(linewidth = 1) +
+  labs(x = "Organic Carbon (kg C)", y = "Methane (kg CH₄)", title = "Phase Portrait: C_org vs CH₄") +
+  theme_minimal()
+```
+
+**Takeaway:** The phase portrait reveals a striking **scale difference** across biomes. The tropical humid trajectory (teal) dominates the plot—its reservoirs process and emit orders of magnitude more carbon and methane than boreal, temperate, or tropical seasonal reservoirs. All biomes show the same qualitative pattern: methane rises as carbon decays, peaks, then both decline toward a lower steady state. The tropical humid curve is so much larger that it emphasizes how climate and carbon density disproportionately drive emissions in warm, high-productivity regions.
+
+## Emissions Intensity (CO₂e per MWh)
+
+To compare reservoirs fairly, we convert CH₄ emissions to **CO₂ equivalent (CO₂e)** per unit of electricity: multiply CH₄ flux by GWP, then divide by daily energy output. This tells us how much climate-warming gas is released per MWh generated. The formula: instantaneous emission $E_{\mathrm{CH4}} = k_{\mathrm{emit}} \times \mathrm{CH}_4$ (kg CH₄/day); then CO₂e/MWh = $E_{\mathrm{CH4}} \times \mathrm{GWP} / E_{\mathrm{day}}$.
+
+```{r plot_intensity}
+example_results <- example_results %>%
+  mutate(
+    E_CH4_kg_day = k_emit * CH4,
+    CO2e_MWh = (E_CH4_kg_day * GWP_CH4 * 365) / (E_day_MWh * 365)  # kg CO2e / MWh
+  )
+
+ggplot(example_results, aes(time, CO2e_MWh, color = biome)) +
+  geom_line(linewidth = 1) +
+  labs(x = "Time (years)", y = "CO₂e per MWh (kg)", title = "Emissions Intensity Over Time") +
+  theme_minimal()
+```
+
+**Takeaway:** Emissions intensity follows the methane pulse: all biomes show an early peak, then a decline. Tropical humid reservoirs (teal) produce an extremely large peak—up to hundreds of millions of kg CO₂e/MWh—that dwarfs the other biomes. Boreal, temperate, and tropical seasonal emissions are much lower and remain close to the x-axis on this scale. This visual reinforces that **tropical humid hydropower reservoirs** have the highest climate footprint per MWh, especially in the first decades after impoundment.
+
+---
+
+# Stability Metric
+
+We need a single number to answer: *"Does this reservoir settle into low emissions over the long run?"* We define **stability** as:
+
+- $I_{\mathrm{early}}$: mean CO₂e/MWh over years 10–20 (early post-impoundment)
+- $I_{\mathrm{late}}$: mean CO₂e/MWh over years 80–100 (long-run)
+- **Stable** = 1 if $I_{\mathrm{late}} < T$ (kg CO₂e/MWh) *and* emissions have dropped by at least 50% ($I_{\mathrm{late}} / I_{\mathrm{early}} < 0.5$); else 0
+
+We use **IPCC** harmonized lifecycle emissions as the threshold $T$. The IPCC Fifth Assessment Report (AR5) Working Group III Annex III gives hydropower lifecycle emissions as: median **24** g CO₂eq/kWh (24 kg CO₂e/MWh), range 1–2200 g CO₂eq/kWh (IPCC 2014). We use the **median (24 kg CO₂e/MWh)** as the "low-carbon hydropower" benchmark—reservoirs below this are comparable to IPCC's typical hydropower lifecycle footprint; those above are higher-emission.
+
+```{r stability_function}
+# Takes an ODE output (time, C_org, CH4) and parms; returns I_early, I_late, stable
+compute_stability_metrics <- function(result_df, parms) {
+  k_emit <- parms$k_emit
+  E_day <- parms$E_day_MWh
+  GWP <- parms$GWP
+  
+  # First compute CO2e/MWh at each time step
+  result_df <- result_df %>%
+    mutate(
+      E_CH4_kg_day = k_emit * CH4,
+      CO2e_MWh = (E_CH4_kg_day * GWP * 365) / (E_day * 365)
+    )
+  
+  # Mean emissions intensity in early (years 10–20) and late (years 80–100) windows
+  # pull(mean) extracts the mean column as a single number (scalar) from the tibble
+  I_early <- result_df %>%
+    filter(time >= 10, time <= 20) %>%
+    summarise(mean = mean(CO2e_MWh, na.rm = TRUE)) %>%
+    pull(mean)
+  
+  I_late <- result_df %>%
+    filter(time >= 80, time <= 100) %>%
+    summarise(mean = mean(CO2e_MWh, na.rm = TRUE)) %>%
+    pull(mean)
+  
+  threshold <- 24   # IPCC AR5 median for hydropower lifecycle emissions (kg CO2e/MWh)
+  # max(I_early, 0.1) avoids division by zero if early emissions are tiny
+  stable <- as.integer(I_late < threshold & (I_late / max(I_early, 0.1)) < 0.5)
+  
+  list(I_early = I_early, I_late = I_late, stable = stable)
+}
+```
+
+---
+
+# Exploration: Stability Across Biomes and Dams
+
+To see how stability varies across biomes, we run the model for a **stratified sample** of reservoirs—up to 20 per biome—and compute the stability metric for each. We then summarize and plot: *Do tropical reservoirs tend to have higher long-run emissions than boreal ones?* This exploration lets us quantify that pattern.
+
+```{r exploration}
+set.seed(42)  # for reproducible random sampling
+# Stratified sample: up to 20 reservoirs per biome (or all if fewer than 20)
+sample_dams <- dam_df %>%
+  group_by(biome) %>%
+  slice_sample(n = 20, replace = FALSE) %>%
+  ungroup()
+
+# For each reservoir: run ODE, compute stability metrics, return one-row summary
+run_and_metric <- function(row) {
+  parms <- list(
+    I_C = row$I_C_kg,
+    k_decay = row$k_decay,
+    f_CH4 = row$f_CH4,
+    k_ox = row$k_ox,
+    k_emit = row$k_emit,
+    E_day_MWh = row$E_day_MWh,
+    GWP = GWP_CH4
+  )
+  y0 <- c(C_org = row$C_org0_kg, CH4 = 0)
+  res <- ode(y = y0, times = years, func = reservoir_ch4_ode, parms = parms)
+  res <- as.data.frame(res)
+  colnames(res) <- c("time", "C_org", "CH4")
+  metrics <- compute_stability_metrics(res, parms)
+  tibble(
+    GRAND_ID = row$GRAND_ID,
+    biome = row$biome,
+    AREA_SKM = row$AREA_SKM,
+    I_early = metrics$I_early,
+    I_late = metrics$I_late,
+    stable = metrics$stable
+  )
+}
+
+# Run the model for each sampled reservoir and collect stability metrics
+explore_results <- map_dfr(1:nrow(sample_dams), \(i) run_and_metric(sample_dams[i, ]))
+```
+
+## Table: Stability by Biome
+
+We summarize the exploration: for each biome, how many reservoirs we ran, what the average long-run emissions intensity ($I_{\mathrm{late}}$) is, and what fraction are classified as "stable" by our metric.
+
+```{r table_stability}
+explore_results %>%
+  group_by(biome) %>%
+  summarise(
+    n = n(),
+    mean_I_late = mean(I_late),
+    pct_stable = 100 * mean(stable),
+    .groups = "drop"
+  ) %>%
+  knitr::kable(digits = 2, caption = "Stability metrics by biome")
+```
+
+## Plot: Long-Run Emissions Intensity by Biome
+
+A **boxplot** shows the distribution of long-run emissions intensity across reservoirs in each biome. The data wrangling behind it: we load GRanD, keep hydropower reservoirs with valid area/capacity/lat, assign biomes from latitude, and join biome-specific parameters (carbon densities, decay rates). For each reservoir we run the ODE over 100 years and compute $I_{\mathrm{late}}$ (mean CO₂e/MWh in years 80–100). We take a stratified sample (up to 20 per biome), run the model for each, and plot all results. The box spans the IQR; points beyond the whiskers are outliers. A **log y-axis** lets us see boreal, temperate, and tropical medians on one scale without extreme tropical values compressing the plot.
+
+```{r plot_exploration}
+ggplot(explore_results, aes(biome, I_late, fill = biome)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_y_log10() +
+  labs(x = "Biome", y = "Long-run CO₂e per MWh (years 80–100, log scale)", 
+       title = "Emissions Intensity Across Biomes") +
+  theme_minimal() +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+**Takeaway:** Boreal and temperate reservoirs cluster at relatively low long-run emissions; tropical seasonal reservoirs show a wider spread; tropical humid reservoirs exhibit both low-median clusters and high outliers. Most boreal and temperate reservoirs sit well below tropical medians. Mean $I_{\mathrm{late}}$ from the table (Boreal ~78,000, Temperate ~200,000, Tropical seasonal ~1.6M, Tropical humid ~12M kg CO₂e/MWh) shows no biome meets our stability criterion (IPCC median 24 kg CO₂e/MWh) in our sample. The biome gradient in emissions intensity is clear: tropical reservoirs, especially tropical humid, have the highest long-run emissions per MWh.
+
+---
+
+# Conclusions
+
+Our exploration shows a clear **biome gradient** in long-run emissions intensity: mean $I_{\mathrm{late}}$ increases from boreal (~78,000 kg CO₂e/MWh) to temperate (~200,000) to tropical seasonal (~1.6M) to tropical humid (~12M kg CO₂e/MWh). None of the reservoirs in our sample meet our stability criterion (IPCC median 24 kg CO₂e/MWh and ≥50% decline from early to late decades), so all biomes show **0% stable**. This is because mean long-run emissions ($I_{\mathrm{late}}$) are orders of magnitude above the IPCC benchmark (e.g. boreal ~78,000, temperate ~200,000, tropical humid ~12M kg CO₂e/MWh). Our model outputs exceed even the IPCC *maximum* for conventional hydropower (2200 kg CO₂e/MWh), likely due to our simplified energy denominator and parameter choices—a reminder that the model is illustrative, not calibrated to real reservoir emissions. The key finding is that *tropical humid hydropower reservoirs have vastly higher long-run emissions per MWh* than boreal or temperate ones, with tropical seasonal intermediate. Siting and expectations about hydropower methane footprints should be **biome-specific**: tropical reservoirs, especially humid ones, carry a much larger climate footprint per unit electricity and may require longer timelines or additional mitigation to be considered climate-friendly by a strict emissions-intensity standard, rather than being classified as “stable low-emission” by our metric.
+---
+
+# Assumptions and Limitations
+
+A few caveats for readers interpreting the results:
+
+We use latitude alone to assign biomes, which misclassifies arid and high-elevation regions. Carbon densities and rate constants are stylized and drawn from literature ranges rather than site-specific calibration. The energy denominator (MWh) is a simple proxy from reservoir capacity; real generation varies with hydrology and operations. The model omits seasonal and interannual variation, stratification, and spatial heterogeneity. We model **gross** CH₄ emissions; a full anthropogenic GHG footprint would follow Prairie et al. (2018) in subtracting pre-impoundment balances and displaced fluxes (e.g., CO₂ that would have been emitted downstream) to capture only what is "visible to the atmosphere." Despite these simplifications, the structure captures the key dynamic—a post-impoundment methane pulse followed by gradual decline—and the sensitivity to biome is consistent with observed patterns (Barros et al., Deemer et al., Prairie et al.).
+
+---
+
+# References
+
+Barros, Nathan, et al. "Carbon Emission from Hydroelectric Reservoirs Linked to Reservoir Age and Latitude." *Nature Geoscience*, vol. 4, no. 9, 2011, pp. 593–96, doi:10.1038/ngeo1211.
+
+Prairie, Yves T., et al. "Greenhouse Gas Emissions from Freshwater Reservoirs: What Does the Atmosphere See?" *Ecosystems*, vol. 21, no. 5, 2018, pp. 1058–71, doi:10.1007/s10021-017-0198-9.
+
+Deemer, Bridget R., et al. "Greenhouse Gas Emissions from Reservoir Water Surfaces: A New Global Synthesis." *BioScience*, vol. 66, no. 11, 2016, pp. 949–64, doi:10.1093/biosci/biw117.
+
+Lehner, Bernhard, et al. "High-Resolution Mapping of the World's Reservoirs and Dams for Sustainable River-Flow Management." *Frontiers in Ecology and the Environment*, vol. 9, no. 9, 2011, pp. 494–502, doi:10.1890/100125.
+
+McGill University, Department of Geography. *Global Reservoir and Dam Database (GRanD) Version 1.3*. Global Dam Watch, 2019, www.globaldamwatch.org.
+
+Intergovernmental Panel on Climate Change. *2006 IPCC Guidelines for National Greenhouse Gas Inventories: Volume 4 Agriculture, Forestry and Other Land Use*. Institute for Global Environmental Strategies, 2006.
+
+Intergovernmental Panel on Climate Change. *Climate Change 2014: Mitigation of Climate Change. Contribution of Working Group III to the Fifth Assessment Report of the Intergovernmental Panel on Climate Change*. Cambridge UP, 2014. Annex III: Technology-Specific Cost and Performance Parameters, Table A.III.2 (Lifecycle GHG emissions of electricity supply technologies).
+
+Intergovernmental Panel on Climate Change. *Climate Change 2021: The Physical Science Basis. Contribution of Working Group I to the Sixth Assessment Report of the Intergovernmental Panel on Climate Change*. Cambridge UP, 2021.
