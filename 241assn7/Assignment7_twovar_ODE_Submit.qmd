@@ -1,16 +1,22 @@
 ---
 title: "Hydropower Reservoir Methane Emissions"
-subtitle: "A Two-Variable ODE Model of Carbon and CH₄ Dynamics by Biome"
-author: "EDS 241 / ESM 244 — Alternative Assignment 7"
+subtitle: "A Two-Variable ODE Model of Carbon and CH4 Dynamics by Biome - ODE practice for EDS 230"
+author: "Lucian Scher"
 format:
-  html: default
+  html:
+    code-fold: true
 execute:
   echo: true
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+![Landscape transformation from a river to a reservoir and greenhouse gas pathways. Reproduced from Fig. 2 in Prairie, Yves T., et al. “Greenhouse Gas Emissions from Freshwater Reservoirs: What Does the Atmosphere See?” Ecosystems 21, no. 5 (2018): 1058–1071. https://doi.org/10.1007/s10021-017-0198-9. © The Author(s) 2018 (author manuscript in PubMed Central). Used here for non‑commercial, educational purposes.](praire2018.jpg)
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
 # tidyverse: data manipulation and plotting (dplyr, ggplot2, tidyr)
 # deSolve: solves ordinary differential equations (ODEs) numerically
 # sf: reads spatial data (shapefiles)
@@ -23,20 +29,26 @@ library(here)
 
 # Motivation
 
-Reservoirs created by dams can emit substantial **methane (CH₄)** from flooded biomass and sediments—a concern for the climate footprint of hydropower. Estimating the *anthropogenic* GHG footprint of reservoirs is contentious: some treat gross emissions as the footprint, while others argue only *net* changes visible to the atmosphere—i.e., emissions attributable to damming minus pre-impoundment and displaced fluxes—should count (Prairie et al. 2018). We focus on CH₄ from flooded organic carbon, which Prairie et al. identify as the main *new* anthropogenic source (essentially all reservoir CH₄ is attributable to impoundment, unlike CO₂ where much may be displaced). In this post, we build a simple **two-variable dynamic model** (an ODE: ordinary differential equation, which describes how quantities change over time) of organic carbon and methane in reservoir water, use the GRanD (Global Reservoir and Dam) database to assign parameters by biome, and explore how emissions intensity (CO₂e per MWh) evolves over time and varies across climates. Our goal is to define a stability metric for “low long-run emissions” and use it to compare tropical, temperate, and boreal reservoirs. We'll walk through each code chunk and explain what we're doing and why.
+Reservoirs created by dams emit substantial **methane (CH₄)** from flooded biomass and sediments which is concerning for the climate footprint of hydropower. Estimating the *anthropogenic* GHG footprint of reservoirs is contentious: some studies treat gross emissions as the footprint, while others argue only *net* changes visible to the atmosphere—i.e., emissions attributable to damming minus pre-impoundment and displaced fluxes—should count (Prairie et al. 2018). We focus on CH₄ from flooded organic carbon, which Prairie et al. identify as the main *new* anthropogenic source (essentially all reservoir CH₄ is attributable to impoundment, unlike CO₂ where much may be displaced). In this post, we build a simple **two-variable dynamic model** (an ODE: ordinary differential equation, which describes how quantities change over time) of organic carbon and methane in reservoir water, use the GRanD (Global Reservoir and Dam) database to assign parameters by biome, and explore how emissions intensity (CO₂e per MWh) evolves over time and varies across climates. Our goal is to define a stability metric for “low long-run emissions” and use it to compare tropical, temperate, and boreal reservoirs. We'll walk through each code chunk and explain what we're doing and why.
 
----
+------------------------------------------------------------------------
 
 # The Model
 
+## Conceptual model
+
+We start with a simple visual diagram of the system: organic carbon enters the reservoir from flooded biomass and soil, then decays over time. A fraction of that decayed carbon becomes methane, which can either be oxidized in the water column or emitted to the atmosphere.
+
+![()](conceptual_model.png)
+
 ## Equations
 
-We track two **state variables**—quantities that change over time—over time \(t\) (years):
+We track two **state variables**—quantities that change over time—over time (t) (years):
 
-1. $C_{\mathrm{org}}(t)$: organic carbon stock in flooded biomass and sediment (kg C)
-2. $\mathrm{CH}_4(t)$: methane mass in the reservoir water column (kg CH₄)
+1.  $C_{\mathrm{org}}(t)$: organic carbon stock in flooded biomass and sediment (kg C)
+2.  $\mathrm{CH}_4(t)$: methane mass in the reservoir water column (kg CH₄)
 
-The equations below describe how each quantity changes: $dX/dt$ is the rate of change of X with respect to time (how fast X is increasing or decreasing). The dynamics are:
+The equations below describe how each quantity changes: $dX/dt$ is the rate of change of X with respect to time (how fast X is increasing or decreasing).
 
 $$
 \frac{dC_{org}}{dt} = I_C - k_{decay}\,C_{org}
@@ -46,13 +58,13 @@ $$
 \frac{dCH_4}{dt} = f_{CH4}\,k_{decay}\,C_{org} - (k_{ox} + k_{emit})\,CH_4
 $$
 
-- $I_C$: external organic carbon input from the catchment (kg C/year)
-- $k_{\mathrm{decay}}$: first-order decomposition rate (1/year)
-- $f_{\mathrm{CH4}}$: fraction of decomposed carbon converted to CH₄ (0–1)
-- $k_{\mathrm{ox}}$: oxidation rate in water column (1/year)
-- $k_{\mathrm{emit}}$: emission/degassing rate (1/year)
+-   $I_C$: external organic carbon input from the catchment (kg C/year)
+-   $k_{\mathrm{decay}}$: first-order decomposition rate (1/year)
+-   $f_{\mathrm{CH4}}$: fraction of decomposed carbon converted to CH₄ (0–1)
+-   $k_{\mathrm{ox}}$: oxidation rate in water column (1/year)
+-   $k_{\mathrm{emit}}$: emission/degassing rate (1/year)
 
-This structure produces a strong early CH₄ pulse as flooded carbon decays, then a decline toward a lower steady state. Prairie et al. (2018) review the temporal evolution of reservoir GHG emissions—CO₂ and CH₄ surge after impoundment then decline over years to decades—and our model captures this pattern. The flooded soil and biomass carbon ($C_{\mathrm{org}}$) is the key *new* anthropogenic source they identify; our decomposition term ($k_{\mathrm{decay}} C_{\mathrm{org}}$) represents that process.
+This structure produces a strong early CH₄ pulse as flooded carbon decays, then a decline toward a lower steady state. Prairie et al. (2018) review the temporal evolution of reservoir GHG emissions—CO₂ and CH₄ surge after impoundment then decline over years to decades, our model captures this pattern. The flooded soil and biomass carbon ($C_{\mathrm{org}}$) is the key *new* anthropogenic source they identify; our decomposition term ($k_{\mathrm{decay}} C_{\mathrm{org}}$) represents that process.
 
 ## Implementation
 
@@ -79,7 +91,7 @@ reservoir_ch4_ode <- function(time, state, parms) {
 }
 ```
 
----
+------------------------------------------------------------------------
 
 # Parameters by Biome
 
@@ -102,18 +114,15 @@ biome_pars <- tibble(
 knitr::kable(biome_pars, digits = 2, caption = "Biome-specific parameters")
 ```
 
----
+------------------------------------------------------------------------
 
 # Loading and Preparing GRanD Data {.scrollable}
 
 GRanD is a global database of reservoirs and dams with attributes like location, surface area, storage capacity, and use (irrigation, hydropower, etc.). We load the **shapefile** (a spatial data format with geometry and attributes), drop the geometry for our tabular analysis, and filter to **hydropower** reservoirs with valid area and capacity. GRanD uses `-99` to indicate missing values—we treat those as NA and filter them out. Then we assign each reservoir to a biome from its latitude and compute the initial carbon stock and ongoing C input using our biome-specific parameters.
 
 ```{r load_grand}
-# Path to GRanD shapefile — adjust to your project layout (edit if file is elsewhere)
+# Path to GRanD shapefile
 grand_path <- here("241assn7", "data", "GRanD_Version_1_3", "GRanD_reservoirs_v1_3.shp")
-# Fallback paths if here() root differs (e.g. if QMD is in a different folder)
-if (!file.exists(grand_path)) grand_path <- "241assn7/data/GRanD_Version_1_3/GRanD_reservoirs_v1_3.shp"
-if (!file.exists(grand_path)) grand_path <- "data/GRanD_Version_1_3/GRanD_reservoirs_v1_3.shp"
 
 # Read shapefile (spatial data); st_drop_geometry removes the polygon column for tabular work
 dam_sf <- st_read(grand_path, quiet = TRUE)
@@ -164,7 +173,7 @@ cat("Reservoirs used:", n_reservoirs, "\n")
 head(dam_df %>% select(GRAND_ID, RES_NAME, COUNTRY, LAT_DD, biome, AREA_SKM, CAP_MCM, C_org0_kg))
 ```
 
----
+------------------------------------------------------------------------
 
 # Example Run: One Reservoir per Biome
 
@@ -258,15 +267,15 @@ ggplot(example_results, aes(time, CO2e_MWh, color = biome)) +
 
 **Takeaway:** Emissions intensity follows the methane pulse: all biomes show an early peak, then a decline. Tropical humid reservoirs (teal) produce an extremely large peak—up to hundreds of millions of kg CO₂e/MWh—that dwarfs the other biomes. Boreal, temperate, and tropical seasonal emissions are much lower and remain close to the x-axis on this scale. This visual reinforces that **tropical humid hydropower reservoirs** have the highest climate footprint per MWh, especially in the first decades after impoundment.
 
----
+------------------------------------------------------------------------
 
 # Stability Metric
 
 We need a single number to answer: *"Does this reservoir settle into low emissions over the long run?"* We define **stability** as:
 
-- $I_{\mathrm{early}}$: mean CO₂e/MWh over years 10–20 (early post-impoundment)
-- $I_{\mathrm{late}}$: mean CO₂e/MWh over years 80–100 (long-run)
-- **Stable** = 1 if $I_{\mathrm{late}} < T$ (kg CO₂e/MWh) *and* emissions have dropped by at least 50% ($I_{\mathrm{late}} / I_{\mathrm{early}} < 0.5$); else 0
+-   $I_{\mathrm{early}}$: mean CO₂e/MWh over years 10–20 (early post-impoundment)
+-   $I_{\mathrm{late}}$: mean CO₂e/MWh over years 80–100 (long-run)
+-   **Stable** = 1 if $I_{\mathrm{late}} < T$ (kg CO₂e/MWh) *and* emissions have dropped by at least 50% ($I_{\mathrm{late}} / I_{\mathrm{early}} < 0.5$); else 0
 
 We use **IPCC** harmonized lifecycle emissions as the threshold $T$. The IPCC Fifth Assessment Report (AR5) Working Group III Annex III gives hydropower lifecycle emissions as: median **24** g CO₂eq/kWh (24 kg CO₂e/MWh), range 1–2200 g CO₂eq/kWh (IPCC 2014). We use the **median (24 kg CO₂e/MWh)** as the "low-carbon hydropower" benchmark—reservoirs below this are comparable to IPCC's typical hydropower lifecycle footprint; those above are higher-emission.
 
@@ -304,7 +313,7 @@ compute_stability_metrics <- function(result_df, parms) {
 }
 ```
 
----
+------------------------------------------------------------------------
 
 # Exploration: Stability Across Biomes and Dams
 
@@ -378,14 +387,13 @@ ggplot(explore_results, aes(biome, I_late, fill = biome)) +
   theme(legend.position = "none", axis.text.x = element_text(angle = 30, hjust = 1))
 ```
 
-**Takeaway:** Boreal and temperate reservoirs cluster at relatively low long-run emissions; tropical seasonal reservoirs show a wider spread; tropical humid reservoirs exhibit both low-median clusters and high outliers. Most boreal and temperate reservoirs sit well below tropical medians. Mean $I_{\mathrm{late}}$ from the table (Boreal ~78,000, Temperate ~200,000, Tropical seasonal ~1.6M, Tropical humid ~12M kg CO₂e/MWh) shows no biome meets our stability criterion (IPCC median 24 kg CO₂e/MWh) in our sample. The biome gradient in emissions intensity is clear: tropical reservoirs, especially tropical humid, have the highest long-run emissions per MWh.
+**Takeaway:** Boreal and temperate reservoirs cluster at relatively low long-run emissions; tropical seasonal reservoirs show a wider spread; tropical humid reservoirs exhibit both low-median clusters and high outliers. Most boreal and temperate reservoirs sit well below tropical medians. Mean $I_{\mathrm{late}}$ from the table (Boreal \~78,000, Temperate \~200,000, Tropical seasonal \~1.6M, Tropical humid \~12M kg CO₂e/MWh) shows no biome meets our stability criterion (IPCC median 24 kg CO₂e/MWh) in our sample. The biome gradient in emissions intensity is clear: tropical reservoirs, especially tropical humid, have the highest long-run emissions per MWh.
 
----
+------------------------------------------------------------------------
 
 # Conclusions
 
-Our exploration shows a clear **biome gradient** in long-run emissions intensity: mean $I_{\mathrm{late}}$ increases from boreal (~78,000 kg CO₂e/MWh) to temperate (~200,000) to tropical seasonal (~1.6M) to tropical humid (~12M kg CO₂e/MWh). None of the reservoirs in our sample meet our stability criterion (IPCC median 24 kg CO₂e/MWh and ≥50% decline from early to late decades), so all biomes show **0% stable**. This is because mean long-run emissions ($I_{\mathrm{late}}$) are orders of magnitude above the IPCC benchmark (e.g. boreal ~78,000, temperate ~200,000, tropical humid ~12M kg CO₂e/MWh). Our model outputs exceed even the IPCC *maximum* for conventional hydropower (2200 kg CO₂e/MWh), likely due to our simplified energy denominator and parameter choices—a reminder that the model is illustrative, not calibrated to real reservoir emissions. The key finding is that *tropical humid hydropower reservoirs have vastly higher long-run emissions per MWh* than boreal or temperate ones, with tropical seasonal intermediate. Siting and expectations about hydropower methane footprints should be **biome-specific**: tropical reservoirs, especially humid ones, carry a much larger climate footprint per unit electricity and may require longer timelines or additional mitigation to be considered climate-friendly by a strict emissions-intensity standard, rather than being classified as “stable low-emission” by our metric.
----
+Our exploration shows a clear **biome gradient** in long-run emissions intensity: mean $I_{\mathrm{late}}$ increases from boreal (\~78,000 kg CO₂e/MWh) to temperate (\~200,000) to tropical seasonal (\~1.6M) to tropical humid (\~12M kg CO₂e/MWh). None of the reservoirs in our sample meet our stability criterion (IPCC median 24 kg CO₂e/MWh and ≥50% decline from early to late decades), so all biomes show **0% stable**. This is because mean long-run emissions ($I_{\mathrm{late}}$) are orders of magnitude above the IPCC benchmark (e.g. boreal \~78,000, temperate \~200,000, tropical humid \~12M kg CO₂e/MWh). Our model outputs exceed even the IPCC *maximum* for conventional hydropower (2200 kg CO₂e/MWh), likely due to our simplified energy denominator and parameter choices—a reminder that the model is illustrative, not calibrated to real reservoir emissions. The key finding is that *tropical humid hydropower reservoirs have vastly higher long-run emissions per MWh* than boreal or temperate ones, with tropical seasonal intermediate. Siting and expectations about hydropower methane footprints should be **biome-specific**: tropical reservoirs, especially humid ones, carry a much larger climate footprint per unit electricity and may require longer timelines or additional mitigation to be considered climate-friendly by a strict emissions-intensity standard, rather than being classified as “stable low-emission” by our metric.
 
 # Assumptions and Limitations
 
@@ -393,7 +401,7 @@ A few caveats for readers interpreting the results:
 
 We use latitude alone to assign biomes, which misclassifies arid and high-elevation regions. Carbon densities and rate constants are stylized and drawn from literature ranges rather than site-specific calibration. The energy denominator (MWh) is a simple proxy from reservoir capacity; real generation varies with hydrology and operations. The model omits seasonal and interannual variation, stratification, and spatial heterogeneity. We model **gross** CH₄ emissions; a full anthropogenic GHG footprint would follow Prairie et al. (2018) in subtracting pre-impoundment balances and displaced fluxes (e.g., CO₂ that would have been emitted downstream) to capture only what is "visible to the atmosphere." Despite these simplifications, the structure captures the key dynamic—a post-impoundment methane pulse followed by gradual decline—and the sensitivity to biome is consistent with observed patterns (Barros et al., Deemer et al., Prairie et al.).
 
----
+------------------------------------------------------------------------
 
 # References
 
